@@ -1,0 +1,371 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# RUFF — Configuration exhaustive avec valeurs par défaut
+# Docs : https://docs.astral.sh/ruff/settings/
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Version Python cible — détermine quelles règles de compatibilité s'appliquent
+# Options : "py38" | "py39" | "py310" | "py311" | "py312" | "py313"
+target-version = "py313"
+
+# Longueur maximale d'une ligne (partagée entre linter et formatter)
+line-length = 88
+
+# Largeur d'une indentation en espaces (utilisée par le formatter)
+indent-width = 4
+
+# Répertoires sources — aide ruff à résoudre les imports first-party
+src = ["."]
+
+# Répertoires et fichiers exclus du linting ET du formatage
+exclude = [
+    ".bzr", ".direnv", ".eggs", ".git", ".hg",
+    ".mypy_cache", ".nox", ".pants.d", ".pyenv",
+    ".pytest_cache", ".pytype", ".ruff_cache", ".svn",
+    ".tox", ".venv", "__pypackages__", "_build",
+    "buck-out", "build", "dist", "node_modules", "venv",
+]
+
+# Exclusions supplémentaires (s'ajoutent à exclude sans le remplacer)
+extend-exclude = []
+
+# Si true, applique les exclusions même quand le fichier est passé explicitement en CLI
+force-exclude = false
+
+# Respecte les patterns d'exclusion du .gitignore
+respect-gitignore = true
+
+# Version minimale de ruff requise — utile en CI pour éviter les surprises
+# required-version = "0.4.0"
+
+# Active les règles/fonctionnalités en preview (non encore stabilisées)
+preview = false
+
+# Applique automatiquement les corrections sûres (équivalent --fix en CLI)
+fix = true
+
+# N'affiche que les corrections appliquées, masque les violations non corrigibles
+fix-only = false
+
+# Autorise les corrections "unsafe" (peut modifier la sémantique du code)
+unsafe-fixes = false
+
+# Affiche le détail des corrections appliquées dans la sortie
+show-fixes = false
+
+# Format de sortie du linter
+# Options : "concise" | "full" | "json" | "json-lines" | "junit" |
+#           "grouped" | "github" | "gitlab" | "pylint" | "azure" | "sarif"
+output-format = "concise"
+
+# Répertoire de cache (stocke les résultats pour accélérer les runs suivants)
+cache-dir = ".ruff_cache"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FORMATAGE
+# ──────────────────────────────────────────────────────────────────────────────
+[format]
+
+# Style de guillemets dans le code formaté
+# Options : "double" | "single" | "preserve"
+quote-style = "double"
+
+# Style d'indentation
+# Options : "space" | "tab"
+indent-style = "space"
+
+# Caractère de fin de ligne
+# Options : "auto" (détecte) | "lf" | "cr-lf" | "native"
+line-ending = "lf"
+
+# Formate les blocs de code Python dans les docstrings
+docstring-code-format = true
+
+# Longueur de ligne dans les blocs de code de docstrings
+# Options : "dynamic" (suit line-length) | nombre entier
+docstring-code-line-length = "dynamic"
+
+# Active les règles de formatage en preview uniquement pour le formatter
+preview = false
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LINTING
+# ──────────────────────────────────────────────────────────────────────────────
+[lint]
+
+# Règles activées. Par défaut : erreurs pycodestyle critiques + pyflakes
+# Référence complète des codes : https://docs.astral.sh/ruff/rules/
+# Exemples de catégories utiles :
+#   E/W  → pycodestyle      I   → isort          N   → pep8-naming
+#   F    → pyflakes          B   → bugbear         UP  → pyupgrade
+#   C90  → mccabe            PL  → pylint           PT  → pytest-style
+#   D    → pydocstyle        ANN → annotations      RUF → règles ruff
+select = ["E4", "E7", "E9", "F"]
+
+# Règles supplémentaires à activer (s'ajoute à select sans le remplacer)
+extend-select = []
+
+# Règles à ignorer (prend le dessus sur select)
+ignore = []
+
+# Règles supplémentaires à ignorer (s'ajoute à ignore)
+extend-ignore = []
+
+# Règles pour lesquelles les corrections auto sont autorisées ("ALL" = toutes)
+fixable = ["ALL"]
+
+# Règles pour lesquelles les corrections auto sont désactivées
+unfixable = []
+
+# Ignore certaines règles dans certains fichiers
+# Exemple : { "tests/**" = ["S101"], "migrations/**" = ["E501"] }
+per-file-ignores = {}
+
+# Même chose, en complément de per-file-ignores
+extend-per-file-ignores = {}
+
+# Fichiers exclus du linting uniquement (pas du formatage)
+exclude = []
+
+# Active les règles en preview pour le linter uniquement
+preview = false
+
+# Active explicitement les règles preview sélectionnées sans activer tout preview
+explicit-preview-rules = false
+
+# Caractères Unicode autorisés malgré leur ressemblance visuelle avec d'autres (règle RUF001)
+allowed-confusables = []
+
+# Regex identifiant les variables "intentionnellement inutilisées" (_, __, _name…)
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+_*)|(?P<name>_))$"
+
+# Mots-clés reconnus comme tags de tâche dans les commentaires (règles TD/FIX)
+task-tags = ["TODO", "FIXME", "HACK", "XXX"]
+
+# Noms d'objets logger personnalisés à reconnaître (règles LOG)
+logger-objects = []
+
+# Modules supplémentaires à traiter comme typing (règles TCH)
+typing-modules = []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# isort — tri et organisation des imports (règles I)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.isort]
+
+# Trie les imports à l'intérieur des sections sans lignes de séparation
+force-sort-within-sections = false
+
+# Force les alias sur leur propre ligne ("import x as y" séparé)
+force-wrap-aliases = false
+
+# Lignes vides après le bloc d'imports (-1 = automatique selon contexte)
+lines-after-imports = -1
+
+# Lignes vides entre imports "import x" et "from x import y" dans une section
+lines-between-types = 0
+
+# Modules à considérer comme appartenant au projet (first-party)
+known-first-party = []
+
+# Modules à forcer en third-party (utile si mal détectés)
+known-third-party = []
+
+# Modules à traiter comme local-folder
+known-local-folder = []
+
+# Modules stdlib supplémentaires non détectés automatiquement
+extra-standard-library = []
+
+# Trie par type dans une section : CONSTANTS d'abord, puis classes, puis reste
+order-by-type = true
+
+# Ordre des imports relatifs
+# Options : "furthest-to-closest" | "closest-to-furthest"
+relative-imports-order = "furthest-to-closest"
+
+# Imports à toujours insérer en haut du fichier
+required-imports = []
+
+# Fusionne "from x import a" et "from x import b" en une seule ligne
+combine-as-imports = false
+
+# Sépare les imports sur trailing comma (force multi-ligne)
+split-on-trailing-comma = false
+
+# Ordre des sections d'imports dans le fichier
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+# Détecte automatiquement le package courant comme first-party
+detect-same-package = true
+
+# Un seul import par ligne dans les blocs "from x import ..."
+force-single-line = false
+
+# Modules exclus du mode force-single-line
+single-line-exclusions = []
+
+# Trie les imports par longueur plutôt qu'alphabétiquement
+length-sort = false
+
+# Trie uniquement les imports directs (non-from) par longueur
+length-sort-straight = false
+
+# Supprime les sections, met tous les imports dans un seul bloc
+no-sections = false
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# pydocstyle — style des docstrings (règles D)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.pydocstyle]
+
+# Convention de docstring à appliquer (active un ensemble de règles D cohérent)
+# Options : "google" | "numpy" | "pep257" — laisser commenté = pas de convention
+# convention = "google"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# pycodestyle (règles E/W)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.pycodestyle]
+
+# Longueur max des docstrings (null = hérite de line-length global)
+# max-doc-length = 88
+
+# Longueur max des lignes pour E501 (null = hérite de line-length global)
+# max-line-length = 88
+
+# Ignore les dépassements de ligne dans les commentaires TODO/FIXME/etc.
+ignore-overlong-task-comments = false
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# McCabe — complexité cyclomatique (règle C90)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.mccabe]
+
+# Complexité cyclomatique max avant de signaler une fonction trop complexe
+max-complexity = 10
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Pylint (règles PL)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.pylint]
+
+# Nombre max d'arguments d'une fonction/méthode (PLR0913)
+max-args = 5
+
+# Nombre max d'expressions booléennes dans une condition (PLR0916)
+max-bool-expr = 5
+
+# Nombre max de branches (if/for/while/try) dans une fonction (PLR0912)
+max-branches = 12
+
+# Nombre max de variables locales dans une fonction (PLR0914)
+max-locals = 15
+
+# Nombre max de return dans une fonction (PLR0911)
+max-returns = 6
+
+# Nombre max de statements dans une fonction (PLR0915)
+max-statements = 50
+
+# Nombre max de méthodes publiques dans une classe (PLR0904)
+max-public-methods = 20
+
+# Profondeur max d'imbrication de blocs (PLR1702)
+max-nested-blocks = 5
+
+# Types de valeurs "magiques" tolérés sans extraction en constante (PLR2004)
+# Options : "int" | "float" | "str" | "bytes" | "complex"
+allow-magic-value-types = ["int"]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# flake8-bugbear (règles B)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.flake8-bugbear]
+
+# Fonctions/classes à traiter comme immutables pour les règles B006/B008
+# (valeurs par défaut autorisées comme arguments par défaut de fonction)
+extend-immutable-calls = []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# flake8-quotes (règles Q)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.flake8-quotes]
+
+# Évite de changer les guillemets si ça crée un échappement supplémentaire
+avoid-escape = true
+
+# Style de guillemets dans les docstrings
+# Options : "double" | "single"
+docstring-quotes = "double"
+
+# Style de guillemets pour les chaînes inline
+# Options : "double" | "single"
+inline-quotes = "double"
+
+# Style de guillemets pour les chaînes multilignes
+# Options : "double" | "single"
+multiline-quotes = "double"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# flake8-type-checking (règles TCH)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.flake8-type-checking]
+
+# Modules exemptés du déplacement dans le bloc TYPE_CHECKING
+exempt-modules = ["typing", "typing_extensions"]
+
+# Classes de base évaluées à l'exécution — leurs imports ne peuvent pas
+# être déplacés dans TYPE_CHECKING (ex: pydantic BaseModel)
+runtime-evaluated-base-classes = []
+
+# Décorateurs évalués à l'exécution (ex: @app.route)
+runtime-evaluated-decorators = []
+
+# Mode strict : déplace tous les imports non utilisés à l'exécution
+strict = false
+
+# Entoure les annotations de guillemets plutôt que de les déplacer
+quote-annotations = false
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# flake8-pytest-style (règles PT)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.flake8-pytest-style]
+
+# Exige des parenthèses sur @pytest.fixture (PT001)
+fixture-parentheses = false
+
+# Exige des parenthèses sur @pytest.mark.xxx (PT023)
+mark-parentheses = false
+
+# Type des noms de paramètres dans parametrize (PT006)
+# Options : "tuple" | "list" | "csv"
+parametrize-names-type = "tuple"
+
+# Type du conteneur de valeurs dans parametrize (PT007)
+# Options : "list" | "tuple"
+parametrize-values-type = "list"
+
+# Type d'une ligne de valeurs dans parametrize (PT007)
+# Options : "tuple" | "list"
+parametrize-values-row-type = "tuple"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# flake8-unused-arguments (règles ARG)
+# ──────────────────────────────────────────────────────────────────────────────
+[lint.flake8-unused-arguments]
+
+# Ignore *args et **kwargs non utilisés (utile pour les signatures de callback)
+ignore-variadic-names = false
