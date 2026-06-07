@@ -1,9 +1,11 @@
 import io
+import logging
 
-import numpy as np
 from faster_whisper import WhisperModel
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _model = None
 
@@ -15,19 +17,23 @@ def preload_model() -> None:
 def _get_model() -> WhisperModel:
     global _model
     if _model is None:
-        print(
-            f"⏳ Loading Whisper model '{settings.WHISPER_MODEL}' on {settings.WHISPER_DEVICE}..."
+        logger.info(
+            "Loading Whisper model '%s' on %s...",
+            settings.WHISPER_MODEL,
+            settings.WHISPER_DEVICE,
         )
+
         _model = WhisperModel(
             settings.WHISPER_MODEL,
             device=settings.WHISPER_DEVICE,
             compute_type="int8" if settings.WHISPER_DEVICE == "cpu" else "float16",
         )
-        print("✅ Whisper model loaded.")
+
+        logger.info("Whisper model loaded.")
     return _model
 
 
-def transcribe_chunk(audio: bytes | np.ndarray) -> str:
+def transcribe_chunk(audio: bytes) -> str:
     """Transcribe a self-contained audio chunk into plain text.
 
     Accepts either raw encoded audio bytes (e.g. a complete WebM/Opus blob,
@@ -46,5 +52,5 @@ def transcribe_chunk(audio: bytes | np.ndarray) -> str:
         )
         return "".join(seg.text for seg in segments).strip()
     except Exception as e:
-        print(f"Whisper transcription error: {e}")
+        logger.error("Whisper transcription error: %s", e)
         return ""

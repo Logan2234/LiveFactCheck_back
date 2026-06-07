@@ -14,10 +14,12 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
 
     # Whisper local
-    WHISPER_MODEL: str = "base"
+    WHISPER_MODEL: str = "medium"
     WHISPER_DEVICE: Literal["cpu", "cuda"] = "cpu"
 
     MAX_CLAIMS_PER_CHUNK: int = 5
+
+    LOG_LEVEL: str = "INFO"
 
     @field_validator("ANTHROPIC_API_KEY")
     @classmethod
