@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
 
+    # Admin panel auth
+    ADMIN_PASSWORD: str = ""
+    JWT_SECRET: str = ""
+    JWT_EXPIRE_HOURS: int = 12
+
     @field_validator("ANTHROPIC_API_KEY")
     @classmethod
     def api_key_must_be_set(cls, v: str) -> str:

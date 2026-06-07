@@ -21,6 +21,7 @@ class Claim(BaseModel):
     category: str = ""
     confidence: int = 0
     counter_claim: str = ""
+    web_search_used: bool = False
 
 
 class TranscriptMessage(BaseModel):

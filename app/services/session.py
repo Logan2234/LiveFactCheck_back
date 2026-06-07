@@ -31,6 +31,7 @@ def _make_claim(result: dict, claim_id: str, timestamp: int) -> Claim:
         category=result.get("category", ""),
         confidence=result.get("confidence", 0),
         counter_claim=result.get("counter_claim", ""),
+        web_search_used=result.get("web_search_used", False),
     )
 
 

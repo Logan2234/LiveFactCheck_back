@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 _client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 MIN_WORDS = 3
+VALID_STATUSES = {"verified", "false", "uncertain", "unverifiable"}
 
 
 def _log_usage(label: str, usage) -> None:
@@ -43,7 +44,7 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
                         "text": {"type": "string"},
                         "status": {
                             "type": "string",
-                            "enum": ["verified", "false", "uncertain", "unverifiable"],
+                            "enum": list(VALID_STATUSES),
                         },
                         "explanation": {"type": "string"},
                         "sources": {
@@ -62,6 +63,7 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
                                 "sport",
                                 "société",
                                 "technologie",
+                                "culture",
                                 "autre",
                             ],
                         },
@@ -75,6 +77,10 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
                             "type": "string",
                             "description": "Si le claim est faux : la réalité correcte. Vide sinon.",
                         },
+                        "web_search_used": {
+                            "type": "boolean",
+                            "description": "True si une recherche web a été utilisée pour vérifier ce claim",
+                        },
                     },
                     "required": [
                         "text",
@@ -84,6 +90,7 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
                         "category",
                         "confidence",
                         "counter_claim",
+                        "web_search_used",
                     ],
                 },
             }
@@ -94,13 +101,14 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
 
 SYSTEM_PROMPT = """Tu es un fact-checker francophone expert.
 
-Extraction : n'extrais QUE les faits vérifiables (chiffres, dates, statistiques, événements, déclarations attribuées). Ignore les opinions et déclarations personnelles. Si aucun fait vérifiable, liste vide.
+Extraction : n'extrais QUE les faits vérifiables (chiffres, dates, statistiques, événements, déclarations attribuées). Ignore les opinions et déclarations personnelles. Si un fait peut être vérifié mais tu n'as pas assez d'infos pour le faire de façon fiable, classe-le comme "uncertain" et explique pourquoi. Si aucun fait vérifiable, liste vide.
 
-Vérification : si une info est récente, d'actualité ou incertaine, utilise web_search avant de conclure, et mets les URLs dans "sources".
+Vérification — par défaut, vérifie avec tes connaissances internes SANS recherche web. N'utilise web_search QUE si le fait dépend d'informations récentes ou changeantes que tu ne peux pas connaître de façon fiable (actualité, événements récents, chiffres ou statuts qui évoluent, déclarations très récentes).
+N'utilise JAMAIS web_search pour des faits établis et immuables (dates historiques, mesures physiques, géographie, faits scientifiques connus) : tu les connais déjà.
+Quand tu as effectué une recherche, mets les URLs dans "sources".
 
 Remplis confidence (0-10) et, pour un claim "false", counter_claim. Termine par submit_claims."""
 
-VALID_STATUSES = {"verified", "false", "uncertain", "unverifiable"}
 
 
 def _parse_claims(claims_raw: list) -> list[dict]:
@@ -115,15 +123,20 @@ def _parse_claims(claims_raw: list) -> list[dict]:
             if isinstance(r.get("confidence"), (int, float))
             else 0,
             "counter_claim": r.get("counter_claim", ""),
+            "web_search_used": r.get("web_search_used", False) is True,
         }
         for r in claims_raw
         if isinstance(r, dict) and "text" in r
     ]
 
 
-async def extract_and_verify(text: str) -> list[dict]:
+async def extract_and_verify(text: str, web_search: bool = True) -> list[dict]:
     if len(text.split()) < MIN_WORDS:
         return []
+
+    # Dropping the web_search tool entirely is more reliable than a prompt
+    # instruction: Claude physically cannot search when it isn't offered.
+    tools = [WEB_SEARCH_TOOL, CLAIM_TOOL] if web_search else [CLAIM_TOOL]
 
     messages: list[dict] = [
         {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
@@ -134,7 +147,7 @@ async def extract_and_verify(text: str) -> list[dict]:
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=messages,
-        tools=[WEB_SEARCH_TOOL, CLAIM_TOOL],
+        tools=tools,
         tool_choice={"type": "auto"},
     )
     _log_usage("extract", response.usage)

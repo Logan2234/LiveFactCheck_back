@@ -1,11 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import settings
+from app.services.auth import check_password, create_token, require_admin
 from app.services.claim_extractor import extract_and_verify
 from app.services.session import run_session
 from app.services.transcription import preload_model
@@ -45,6 +46,11 @@ app.add_middleware(
 
 class FactCheckRequest(BaseModel):
     text: str
+    web_search: bool = True
+
+
+class LoginRequest(BaseModel):
+    password: str
 
 
 @app.get("/health")
@@ -52,9 +58,19 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post("/admin/login")
+async def admin_login(req: LoginRequest):
+    if not check_password(req.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Mot de passe incorrect",
+        )
+    return {"token": create_token()}
+
+
 @app.post("/fact-check")
-async def fact_check(req: FactCheckRequest):
-    results = await extract_and_verify(req.text)
+async def fact_check(req: FactCheckRequest, _admin: str = Depends(require_admin)):
+    results = await extract_and_verify(req.text, web_search=req.web_search)
     return {"text": req.text, "claims": results}
 
 
