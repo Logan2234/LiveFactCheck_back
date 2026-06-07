@@ -1,14 +1,11 @@
-import asyncio
-import os
-import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import io
 
+import numpy as np
 from faster_whisper import WhisperModel
 
 from app.config import settings
 
 _model = None
-_executor = ThreadPoolExecutor(max_workers=2)
 
 
 def preload_model() -> None:
@@ -30,34 +27,24 @@ def _get_model() -> WhisperModel:
     return _model
 
 
-async def transcribe_audio(audio_data: bytes) -> str:
-    """Transcribe audio bytes using local Whisper model."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(_executor, _transcribe_sync, audio_data)
+def transcribe_chunk(audio: bytes | np.ndarray) -> str:
+    """Transcribe a self-contained audio chunk into plain text.
 
-
-def _transcribe_sync(audio_data: bytes) -> str:
-    """Synchronous transcription (runs in thread pool)."""
+    Accepts either raw encoded audio bytes (e.g. a complete WebM/Opus blob,
+    decoded via ffmpeg) or a float32 PCM array. Synchronous and CPU-bound —
+    call it from a thread pool.
+    """
     model = _get_model()
-    tmp_path = None
-
+    # faster-whisper accepts a path, a file-like object, or a float32 ndarray.
+    # Encoded bytes (a WebM/Opus blob) must be wrapped so ffmpeg can decode them.
+    source = io.BytesIO(audio) if isinstance(audio, bytes) else audio
     try:
-        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-            tmp_path = f.name
-            f.write(audio_data)
-            f.flush()
-
-        segments, info = model.transcribe(tmp_path, language="fr", vad_filter=True)
-
-        text = " ".join(seg.text.strip() for seg in segments)
-
-        if text:
-            print(f"Transcribed: '{text}'")
-
-        return text
+        segments, _ = model.transcribe(
+            source,
+            language="fr",
+            vad_filter=True,
+        )
+        return "".join(seg.text for seg in segments).strip()
     except Exception as e:
-        print(f"Whisper error: {e}")
+        print(f"Whisper transcription error: {e}")
         return ""
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)

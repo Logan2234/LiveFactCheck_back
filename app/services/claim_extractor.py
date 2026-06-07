@@ -36,7 +36,17 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
                         },
                         "category": {
                             "type": "string",
-                            "enum": ["politique", "économie", "science", "santé", "histoire", "sport", "société", "technologie", "autre"],
+                            "enum": [
+                                "politique",
+                                "économie",
+                                "science",
+                                "santé",
+                                "histoire",
+                                "sport",
+                                "société",
+                                "technologie",
+                                "autre",
+                            ],
                             "description": "Catégorie thématique du claim",
                         },
                         "confidence": {
@@ -50,7 +60,15 @@ CLAIM_TOOL: anthropic.types.ToolParam = {
                             "description": "Si le claim est faux, quelle est la réalité correcte ? Laisser vide sinon.",
                         },
                     },
-                    "required": ["text", "status", "explanation", "sources", "category", "confidence", "counter_claim"],
+                    "required": [
+                        "text",
+                        "status",
+                        "explanation",
+                        "sources",
+                        "category",
+                        "confidence",
+                        "counter_claim",
+                    ],
                 },
             }
         },
@@ -88,7 +106,9 @@ def _parse_claims(claims_raw: list) -> list[dict]:
             "explanation": r.get("explanation", ""),
             "sources": r.get("sources") or [],
             "category": r.get("category", "autre"),
-            "confidence": max(0, min(10, int(r["confidence"]))) if isinstance(r.get("confidence"), (int, float)) else 0,
+            "confidence": max(0, min(10, int(r["confidence"])))
+            if isinstance(r.get("confidence"), (int, float))
+            else 0,
             "counter_claim": r.get("counter_claim", ""),
         }
         for r in claims_raw
@@ -100,12 +120,20 @@ async def extract_and_verify(text: str) -> list[dict]:
     if len(text.split()) < MIN_WORDS:
         return []
 
-    messages: list[dict] = [{"role": "user", "content": f"Analyse ce texte :\n\n{text}"}]
+    messages: list[dict] = [
+        {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
+    ]
 
     response = await _client.messages.create(
         model=settings.ANTHROPIC_MODEL,
         max_tokens=2048,
-        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        system=[
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         messages=messages,
         tools=[WEB_SEARCH_TOOL, CLAIM_TOOL],
         tool_choice={"type": "auto"},
@@ -120,14 +148,22 @@ async def extract_and_verify(text: str) -> list[dict]:
     # Continue the conversation and force the structured output
     if response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
-        messages.append({
-            "role": "user",
-            "content": "Utilise maintenant submit_claims pour structurer les claims identifiés.",
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": "Utilise maintenant submit_claims pour structurer les claims identifiés.",
+            }
+        )
         response2 = await _client.messages.create(
             model=settings.ANTHROPIC_MODEL,
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=messages,
             tools=[CLAIM_TOOL],
             tool_choice={"type": "tool", "name": "submit_claims"},

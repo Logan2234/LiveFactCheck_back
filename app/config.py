@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
@@ -15,7 +17,6 @@ class Settings(BaseSettings):
     WHISPER_MODEL: str = "base"
     WHISPER_DEVICE: Literal["cpu", "cuda"] = "cpu"
 
-    CHUNK_DURATION_S: int = 5
     MAX_CLAIMS_PER_CHUNK: int = 5
 
     @field_validator("ANTHROPIC_API_KEY")
