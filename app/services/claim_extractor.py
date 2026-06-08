@@ -181,3 +181,81 @@ async def extract_and_verify(text: str, web_search: bool = True) -> list[dict]:
                 return _parse_claims(block.input.get("claims", []))
 
     return []
+
+
+async def debug_extract(text: str, web_search: bool = True) -> dict:
+    """Like extract_and_verify but also returns token usage and turn count."""
+    if len(text.split()) < MIN_WORDS:
+        return {"claims": [], "turns": 0, "usage": {}, "model": settings.ANTHROPIC_MODEL,
+                "web_search_enabled": web_search, "web_search_called": False}
+
+    tools = [WEB_SEARCH_TOOL, CLAIM_TOOL] if web_search else [CLAIM_TOOL]
+    messages: list[dict] = [{"role": "user", "content": f"Analyse ce texte :\n\n{text}"}]
+
+    response = await _client.messages.create(
+        model=settings.ANTHROPIC_MODEL,
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+        tools=tools,
+        tool_choice={"type": "auto"},
+    )
+    _log_usage("debug-extract", response.usage)
+
+    web_search_called = any(
+        getattr(b, "type", None) == "tool_use" and b.name == "web_search"
+        for b in response.content
+    )
+    total_usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+        "cache_write": getattr(response.usage, "cache_creation_input_tokens", 0),
+        "cache_read": getattr(response.usage, "cache_read_input_tokens", 0),
+    }
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "submit_claims":
+            return {
+                "claims": _parse_claims(block.input.get("claims", [])),
+                "turns": 1,
+                "usage": total_usage,
+                "model": settings.ANTHROPIC_MODEL,
+                "web_search_enabled": web_search,
+                "web_search_called": web_search_called,
+            }
+
+    if response.stop_reason == "tool_use":
+        messages.append({"role": "assistant", "content": response.content})
+        messages.append({"role": "user", "content": "Utilise maintenant submit_claims pour structurer les claims identifiés."})
+        response2 = await _client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+            tools=[WEB_SEARCH_TOOL, CLAIM_TOOL],
+            tool_choice={"type": "tool", "name": "submit_claims"},
+        )
+        _log_usage("debug-extract-fallback", response2.usage)
+        total_usage["input_tokens"] += response2.usage.input_tokens
+        total_usage["output_tokens"] += response2.usage.output_tokens
+        total_usage["cache_write"] += getattr(response2.usage, "cache_creation_input_tokens", 0)
+        total_usage["cache_read"] += getattr(response2.usage, "cache_read_input_tokens", 0)
+        for block in response2.content:
+            if block.type == "tool_use" and block.name == "submit_claims":
+                return {
+                    "claims": _parse_claims(block.input.get("claims", [])),
+                    "turns": 2,
+                    "usage": total_usage,
+                    "model": settings.ANTHROPIC_MODEL,
+                    "web_search_enabled": web_search,
+                    "web_search_called": web_search_called,
+                }
+
+    return {
+        "claims": [],
+        "turns": 1,
+        "usage": total_usage,
+        "model": settings.ANTHROPIC_MODEL,
+        "web_search_enabled": web_search,
+        "web_search_called": web_search_called,
+    }

@@ -19,6 +19,28 @@ from app.services.transcription import transcribe_chunk
 
 logger = logging.getLogger(__name__)
 
+_active_sessions: dict[str, dict] = {}
+_total_sessions = 0
+
+
+def get_sessions_status() -> dict:
+    now = time.time()
+    sessions = [
+        {
+            "id": s["id"],
+            "connected_at": s["connected_at"],
+            "client": s["client"],
+            "chunks_received": s["chunks_received"],
+            "transcripts": s["transcripts"],
+            "claims_spawned": s["claims_spawned"],
+            "active_tasks": len(s["_tasks"]),
+            "last_transcript": s["last_transcript"],
+            "idle_s": round(now - s["last_activity"]),
+        }
+        for s in _active_sessions.values()
+    ]
+    return {"active": sessions, "total_since_start": _total_sessions}
+
 
 def _make_claim(result: dict, claim_id: str, timestamp: int) -> Claim:
     return Claim(
@@ -69,11 +91,15 @@ async def _process_claims(ws: WebSocket, transcript: str):
 
 
 def _spawn_claims(
-    ws: WebSocket, transcript: str, background_tasks: set[asyncio.Task]
+    ws: WebSocket,
+    transcript: str,
+    background_tasks: set[asyncio.Task],
+    session_info: dict,
 ):
     """Fire claim extraction for a transcribed chunk, tracking the task."""
     if len(transcript.split()) < MIN_WORDS:
         return
+    session_info["claims_spawned"] += 1
     task = asyncio.create_task(_process_claims(ws, transcript))
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
@@ -87,9 +113,27 @@ async def run_session(ws: WebSocket):
     and fire claim extraction on the resulting text. Sentences may be split
     across chunk boundaries — this is the simple baseline.
     """
+    global _total_sessions
     await ws.accept()
     loop = asyncio.get_event_loop()
     background_tasks: set[asyncio.Task] = set()
+
+    session_id = str(uuid.uuid4())
+    _total_sessions += 1
+    client_host = ws.client.host if ws.client else "unknown"
+    session_info: dict = {
+        "id": session_id,
+        "connected_at": time.time(),
+        "client": client_host,
+        "chunks_received": 0,
+        "transcripts": 0,
+        "claims_spawned": 0,
+        "_tasks": background_tasks,
+        "last_transcript": "",
+        "last_activity": time.time(),
+    }
+    _active_sessions[session_id] = session_info
+    logger.info("WS session %s opened from %s", session_id[:8], client_host)
 
     try:
         while True:
@@ -101,6 +145,9 @@ async def run_session(ws: WebSocket):
             if not audio:
                 continue
 
+            session_info["chunks_received"] += 1
+            session_info["last_activity"] = time.time()
+
             try:
                 transcript = await loop.run_in_executor(None, transcribe_chunk, audio)
             except Exception as e:
@@ -110,9 +157,13 @@ async def run_session(ws: WebSocket):
             if not transcript:
                 continue
 
+            session_info["transcripts"] += 1
+            session_info["last_transcript"] = transcript[:120]
+            session_info["last_activity"] = time.time()
+
             logger.info(transcript)
             await ws.send_json({"type": "transcript", "text": transcript})
-            _spawn_claims(ws, transcript, background_tasks)
+            _spawn_claims(ws, transcript, background_tasks, session_info)
 
     except (WebSocketDisconnect, RuntimeError):
         # RuntimeError is raised by ws.receive() once the socket is disconnected.
@@ -120,5 +171,7 @@ async def run_session(ws: WebSocket):
     except Exception as e:
         logger.error("WebSocket error: %s", e)
     finally:
+        _active_sessions.pop(session_id, None)
+        logger.info("WS session %s closed", session_id[:8])
         for task in background_tasks:
             task.cancel()
