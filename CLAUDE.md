@@ -23,10 +23,8 @@ No test suite yet — `requirements-dev.txt` is just pyright.
 
 ## Admin API
 
-- Everything under `/admin/*` is gated by `Depends(require_admin)` (JWT issued in `auth.py`).
-  The exact set of routes lives in `main.py` — read it rather than trusting a list here.
-- `extract_and_verify` is the prod path; `debug_extract` mirrors it but also returns token
-  usage / turn count / web_search flags, and powers `/admin/model-test`.
+- Everything under `/admin/*` is gated by `require_admin` (`dependencies.py`), which verifies a JWT minted in `core/security.py`. The routes live in `api/routers/` (admin in `admin.py`, the `/admin/login` token exchange in `auth.py`), mounted in `main.py` — read those rather than trusting a list here.
+- `extract_and_verify` is the prod path; `debug_extract` mirrors it but also returns token usage / turn count / web_search flags, and powers `/admin/model-test`.
 
 ## Gotchas
 

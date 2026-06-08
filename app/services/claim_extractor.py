@@ -1,6 +1,15 @@
 import logging
+from typing import Any, cast
 
 import anthropic
+from anthropic.types import (
+    Message,
+    MessageParam,
+    ToolParam,
+    ToolUnionParam,
+    Usage,
+    WebSearchTool20250305Param,
+)
 
 from app.config import settings
 
@@ -12,25 +21,25 @@ MIN_WORDS = 3
 VALID_STATUSES = {"verified", "false", "uncertain", "unverifiable"}
 
 
-def _log_usage(label: str, usage) -> None:
+def _log_usage(label: str, usage: Usage) -> None:
     """Log token usage so cache hits/misses are observable (prefix is small)."""
     logger.info(
         "%s: in=%s cache_write=%s cache_read=%s out=%s",
         label,
         usage.input_tokens,
-        getattr(usage, "cache_creation_input_tokens", 0),
-        getattr(usage, "cache_read_input_tokens", 0),
+        usage.cache_creation_input_tokens or 0,
+        usage.cache_read_input_tokens or 0,
         usage.output_tokens,
     )
 
 
-WEB_SEARCH_TOOL = {
+WEB_SEARCH_TOOL: WebSearchTool20250305Param = {
     "type": "web_search_20250305",
     "name": "web_search",
     "max_uses": 2,
 }
 
-CLAIM_TOOL: anthropic.types.ToolParam = {
+CLAIM_TOOL: ToolParam = {
     "name": "submit_claims",
     "description": "Soumet les affirmations factuelles extraites et vérifiées.",
     "cache_control": {"type": "ephemeral"},
@@ -111,7 +120,7 @@ Quand tu as effectué une recherche, mets les URLs dans "sources".
 Remplis confidence (0-10) et, pour un claim "false", counter_claim. Termine par submit_claims."""
 
 
-def _parse_claims(claims_raw: list) -> list[dict]:
+def _parse_claims(claims_raw: list[Any]) -> list[dict[str, Any]]:
     return [
         {
             "text": r["text"],
@@ -130,15 +139,50 @@ def _parse_claims(claims_raw: list) -> list[dict]:
     ]
 
 
-async def extract_and_verify(text: str, web_search: bool = True) -> list[dict]:
+def _claims_from_response(response: Message) -> list[dict[str, Any]] | None:
+    """Return parsed claims if the response contains a submit_claims tool call.
+
+    ``None`` means the model hasn't called submit_claims yet (e.g. it only
+    web-searched), which is what triggers the forced second turn.
+    """
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "submit_claims":
+            tool_input = cast(dict[str, Any], block.input)
+            return _parse_claims(tool_input.get("claims", []))
+    return None
+
+
+def _build_tools(web_search: bool) -> list[ToolUnionParam]:
+    # Dropping the web_search tool entirely is more reliable than a prompt
+    # instruction: Claude physically cannot search when it isn't offered.
+    if web_search:
+        return [WEB_SEARCH_TOOL, CLAIM_TOOL]
+    return [CLAIM_TOOL]
+
+
+def _usage_dict(usage: Usage) -> dict[str, int]:
+    return {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cache_write": usage.cache_creation_input_tokens or 0,
+        "cache_read": usage.cache_read_input_tokens or 0,
+    }
+
+
+def _web_search_called(response: Message) -> bool:
+    return any(
+        block.type == "server_tool_use" and block.name == "web_search"
+        for block in response.content
+    )
+
+
+async def extract_and_verify(
+    text: str, web_search: bool = True
+) -> list[dict[str, Any]]:
     if len(text.split()) < MIN_WORDS:
         return []
 
-    # Dropping the web_search tool entirely is more reliable than a prompt
-    # instruction: Claude physically cannot search when it isn't offered.
-    tools = [WEB_SEARCH_TOOL, CLAIM_TOOL] if web_search else [CLAIM_TOOL]
-
-    messages: list[dict] = [
+    messages: list[MessageParam] = [
         {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
     ]
 
@@ -147,18 +191,18 @@ async def extract_and_verify(text: str, web_search: bool = True) -> list[dict]:
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=messages,
-        tools=tools,
+        tools=_build_tools(web_search),
         tool_choice={"type": "auto"},
     )
     _log_usage("extract", response.usage)
 
     # Happy path: submit_claims present in first response (with or without prior web_search)
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "submit_claims":
-            return _parse_claims(block.input.get("claims", []))
+    claims = _claims_from_response(response)
+    if claims is not None:
+        return claims
 
-    # Fallback: Claude did web searches but didn't call submit_claims yet
-    # Continue the conversation and force the structured output
+    # Fallback: Claude did web searches but didn't call submit_claims yet.
+    # Continue the conversation and force the structured output.
     if response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
         messages.append(
@@ -176,27 +220,35 @@ async def extract_and_verify(text: str, web_search: bool = True) -> list[dict]:
             tool_choice={"type": "tool", "name": "submit_claims"},
         )
         _log_usage("extract-fallback", response2.usage)
-        for block in response2.content:
-            if block.type == "tool_use" and block.name == "submit_claims":
-                return _parse_claims(block.input.get("claims", []))
+        claims = _claims_from_response(response2)
+        if claims is not None:
+            return claims
 
     return []
 
 
-async def debug_extract(text: str, web_search: bool = True) -> dict:
+async def debug_extract(text: str, web_search: bool = True) -> dict[str, Any]:
     """Like extract_and_verify but also returns token usage and turn count."""
-    if len(text.split()) < MIN_WORDS:
+
+    def result(
+        claims: list[dict[str, Any]],
+        turns: int,
+        usage: dict[str, int],
+        web_search_called: bool,
+    ) -> dict[str, Any]:
         return {
-            "claims": [],
-            "turns": 0,
-            "usage": {},
+            "claims": claims,
+            "turns": turns,
+            "usage": usage,
             "model": settings.ANTHROPIC_MODEL,
             "web_search_enabled": web_search,
-            "web_search_called": False,
+            "web_search_called": web_search_called,
         }
 
-    tools = [WEB_SEARCH_TOOL, CLAIM_TOOL] if web_search else [CLAIM_TOOL]
-    messages: list[dict] = [
+    if len(text.split()) < MIN_WORDS:
+        return result([], 0, {}, False)
+
+    messages: list[MessageParam] = [
         {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
     ]
 
@@ -205,32 +257,17 @@ async def debug_extract(text: str, web_search: bool = True) -> dict:
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=messages,
-        tools=tools,
+        tools=_build_tools(web_search),
         tool_choice={"type": "auto"},
     )
     _log_usage("debug-extract", response.usage)
 
-    web_search_called = any(
-        getattr(b, "type", None) == "tool_use" and b.name == "web_search"
-        for b in response.content
-    )
-    total_usage = {
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
-        "cache_write": getattr(response.usage, "cache_creation_input_tokens", 0),
-        "cache_read": getattr(response.usage, "cache_read_input_tokens", 0),
-    }
+    web_search_called = _web_search_called(response)
+    total_usage = _usage_dict(response.usage)
 
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "submit_claims":
-            return {
-                "claims": _parse_claims(block.input.get("claims", [])),
-                "turns": 1,
-                "usage": total_usage,
-                "model": settings.ANTHROPIC_MODEL,
-                "web_search_enabled": web_search,
-                "web_search_called": web_search_called,
-            }
+    claims = _claims_from_response(response)
+    if claims is not None:
+        return result(claims, 1, total_usage, web_search_called)
 
     if response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
@@ -249,30 +286,10 @@ async def debug_extract(text: str, web_search: bool = True) -> dict:
             tool_choice={"type": "tool", "name": "submit_claims"},
         )
         _log_usage("debug-extract-fallback", response2.usage)
-        total_usage["input_tokens"] += response2.usage.input_tokens
-        total_usage["output_tokens"] += response2.usage.output_tokens
-        total_usage["cache_write"] += getattr(
-            response2.usage, "cache_creation_input_tokens", 0
-        )
-        total_usage["cache_read"] += getattr(
-            response2.usage, "cache_read_input_tokens", 0
-        )
-        for block in response2.content:
-            if block.type == "tool_use" and block.name == "submit_claims":
-                return {
-                    "claims": _parse_claims(block.input.get("claims", [])),
-                    "turns": 2,
-                    "usage": total_usage,
-                    "model": settings.ANTHROPIC_MODEL,
-                    "web_search_enabled": web_search,
-                    "web_search_called": web_search_called,
-                }
+        for key, value in _usage_dict(response2.usage).items():
+            total_usage[key] += value
+        claims = _claims_from_response(response2)
+        if claims is not None:
+            return result(claims, 2, total_usage, web_search_called)
 
-    return {
-        "claims": [],
-        "turns": 1,
-        "usage": total_usage,
-        "model": settings.ANTHROPIC_MODEL,
-        "web_search_enabled": web_search,
-        "web_search_called": web_search_called,
-    }
+    return result([], 1, total_usage, web_search_called)

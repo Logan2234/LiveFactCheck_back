@@ -13,7 +13,7 @@ import uuid
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from app.models.schemas import Claim, VerificationStatus
+from app.schemas.claim import Claim, VerificationStatus
 from app.services.claim_extractor import MIN_WORDS, extract_and_verify
 from app.services.transcription import transcribe_chunk
 

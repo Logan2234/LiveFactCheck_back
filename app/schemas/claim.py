@@ -1,3 +1,9 @@
+"""Pydantic schemas for claims — the WebSocket/API contract.
+
+Mirrored front-side by the ``Claim`` shape in ``front/src/lib/stores/claims.ts``.
+Any change here is a two-repo change (see ../../CLAUDE.md).
+"""
+
 from enum import Enum
 
 from pydantic import BaseModel
