@@ -5,7 +5,7 @@ on:
 
 jobs:
   check:
-    name: Format, lint & type check
+    name: Format, lint, type check & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,9 +14,10 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -e ".[dev]"
 
       - name: Ruff — format check
         run: ruff format --check .
@@ -26,3 +27,6 @@ jobs:
 
       - name: Pyright — type check
         run: pyright app/
+
+      - name: Pytest
+        run: pytest --cov=app --cov-report=term-missing

@@ -1,0 +1,84 @@
+# Single source of project config: deps in [project], tooling in [tool.*].
+# For tooling, only values that differ from a tool's defaults are set — defaults
+# are intentionally omitted to keep this file readable.
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "livefactchecker-backend"
+version = "0.1.0"
+description = "LiveFactChecker backend: audio → transcription → claim verification."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "pydantic-settings>=2.0.0",
+    "ruff>=0.4.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.9.0",
+    "websockets>=16.0",
+    "python-multipart>=0.0.9",
+    "faster-whisper>=1.0.0",
+    "anthropic>=0.40.0",
+    "numpy>=2.4.6",
+    "pyjwt>=2.8.0",
+    "psutil>=7.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyright>=1.1.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]
+
+# Discover app/ and its subpackages (api, core, schemas, services, models).
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Ruff (lint + format)
+# ──────────────────────────────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+src = ["."]
+exclude = [
+    ".bzr", ".direnv", ".eggs", ".git", ".hg",
+    ".mypy_cache", ".nox", ".pants.d", ".pyenv",
+    ".pytest_cache", ".pytype", ".ruff_cache", ".svn",
+    ".tox", ".venv", "__pypackages__", "_build",
+    "buck-out", "build", "dist", "node_modules", "venv",
+]
+
+[tool.ruff.format]
+line-ending = "lf"
+docstring-code-format = true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Pyright (type checking). CI runs `pyright app/`; this mirrors the old pyrightconfig.json.
+# ──────────────────────────────────────────────────────────────────────────────
+[tool.pyright]
+include = ["app"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingImports = true
+reportMissingTypeStubs = false
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Pytest
+# ──────────────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Coverage (pytest-cov / coverage.py) — reporting only, no failure threshold yet.
+# ──────────────────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true

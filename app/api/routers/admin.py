@@ -131,7 +131,8 @@ async def patch_config(patch: ConfigPatch) -> ConfigPatchResponse:
     if patch.anthropic_model is not None:
         if patch.anthropic_model not in _EDITABLE_MODELS:
             raise HTTPException(
-                status_code=422, detail=f"Modèle inconnu : {patch.anthropic_model}"
+                status_code=422,
+                detail=f"Modèle inconnu : {patch.anthropic_model}",
             )
         settings.ANTHROPIC_MODEL = patch.anthropic_model
         changed["anthropic_model"] = patch.anthropic_model

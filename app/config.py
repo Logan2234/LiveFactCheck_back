@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     @classmethod
     def api_key_must_be_set(cls, v: str) -> str:
         if not v or v.startswith("sk-ant-..."):
-            raise ValueError("ANTHROPIC_API_KEY manquante ou non configurée dans .env")
+            raise ValueError(
+                "ANTHROPIC_API_KEY manquante ou non configurée dans .env"
+            )
         return v
 
 

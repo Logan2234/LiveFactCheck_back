@@ -124,7 +124,9 @@ def _parse_claims(claims_raw: list[Any]) -> list[dict[str, Any]]:
     return [
         {
             "text": r["text"],
-            "status": r["status"] if r.get("status") in VALID_STATUSES else "uncertain",
+            "status": r["status"]
+            if r.get("status") in VALID_STATUSES
+            else "uncertain",
             "explanation": r.get("explanation", ""),
             "sources": r.get("sources") or [],
             "category": r.get("category", "autre"),

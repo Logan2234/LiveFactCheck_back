@@ -79,11 +79,15 @@ async def _process_claims(ws: WebSocket, transcript: str):
         await ws.send_json(
             {
                 "type": "claim",
-                "claim": _make_claim(first, pending_id, pending_ts).model_dump(),
+                "claim": _make_claim(
+                    first, pending_id, pending_ts
+                ).model_dump(),
             }
         )
         for result in rest:
-            claim = _make_claim(result, str(uuid.uuid4()), int(time.time() * 1000))
+            claim = _make_claim(
+                result, str(uuid.uuid4()), int(time.time() * 1000)
+            )
             await ws.send_json({"type": "claim", "claim": claim.model_dump()})
 
     except Exception as e:
@@ -149,7 +153,9 @@ async def run_session(ws: WebSocket):
             session_info["last_activity"] = time.time()
 
             try:
-                transcript = await loop.run_in_executor(None, transcribe_chunk, audio)
+                transcript = await loop.run_in_executor(
+                    None, transcribe_chunk, audio
+                )
             except Exception as e:
                 logger.error("Transcription error: %s", e)
                 continue

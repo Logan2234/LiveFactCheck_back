@@ -12,10 +12,13 @@ extraction/verification via the Anthropic API. Plus an admin API under `/admin/*
 Own git repo — run git/CI from `backend/`. Default shell is PowerShell 5.1, where `&&`
 is a parse error: run statements separately.
 
+- Install: `pip install -e ".[dev]"` (all config — deps + tooling — lives in `pyproject.toml`; no requirements*.txt).
 - Run: `python run.py` (localhost:8000, reload + watches .env)
-- CI gates (exactly these, on pull_request): `ruff format --check .`, `ruff check .`, `pyright app/`
+- CI gates (exactly these, on pull_request): `ruff format --check .`, `ruff check .`, `pyright app/`, `pytest`.
 
-No test suite yet — `requirements-dev.txt` is just pyright.
+Tests live in `tests/`; `conftest.py` sets dummy auth/API env vars before any `app`
+import so the suite runs offline (the `ANTHROPIC_API_KEY` validator would otherwise fail).
+Test pure service logic first (see `tests/test_claim_extractor.py`), routes later.
 
 ## Conventions
 
