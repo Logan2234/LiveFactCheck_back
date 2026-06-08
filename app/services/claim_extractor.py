@@ -23,6 +23,7 @@ def _log_usage(label: str, usage) -> None:
         usage.output_tokens,
     )
 
+
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
     "name": "web_search",
@@ -110,7 +111,6 @@ Quand tu as effectué une recherche, mets les URLs dans "sources".
 Remplis confidence (0-10) et, pour un claim "false", counter_claim. Termine par submit_claims."""
 
 
-
 def _parse_claims(claims_raw: list) -> list[dict]:
     return [
         {
@@ -186,11 +186,19 @@ async def extract_and_verify(text: str, web_search: bool = True) -> list[dict]:
 async def debug_extract(text: str, web_search: bool = True) -> dict:
     """Like extract_and_verify but also returns token usage and turn count."""
     if len(text.split()) < MIN_WORDS:
-        return {"claims": [], "turns": 0, "usage": {}, "model": settings.ANTHROPIC_MODEL,
-                "web_search_enabled": web_search, "web_search_called": False}
+        return {
+            "claims": [],
+            "turns": 0,
+            "usage": {},
+            "model": settings.ANTHROPIC_MODEL,
+            "web_search_enabled": web_search,
+            "web_search_called": False,
+        }
 
     tools = [WEB_SEARCH_TOOL, CLAIM_TOOL] if web_search else [CLAIM_TOOL]
-    messages: list[dict] = [{"role": "user", "content": f"Analyse ce texte :\n\n{text}"}]
+    messages: list[dict] = [
+        {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
+    ]
 
     response = await _client.messages.create(
         model=settings.ANTHROPIC_MODEL,
@@ -226,7 +234,12 @@ async def debug_extract(text: str, web_search: bool = True) -> dict:
 
     if response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
-        messages.append({"role": "user", "content": "Utilise maintenant submit_claims pour structurer les claims identifiés."})
+        messages.append(
+            {
+                "role": "user",
+                "content": "Utilise maintenant submit_claims pour structurer les claims identifiés.",
+            }
+        )
         response2 = await _client.messages.create(
             model=settings.ANTHROPIC_MODEL,
             max_tokens=1024,
@@ -238,8 +251,12 @@ async def debug_extract(text: str, web_search: bool = True) -> dict:
         _log_usage("debug-extract-fallback", response2.usage)
         total_usage["input_tokens"] += response2.usage.input_tokens
         total_usage["output_tokens"] += response2.usage.output_tokens
-        total_usage["cache_write"] += getattr(response2.usage, "cache_creation_input_tokens", 0)
-        total_usage["cache_read"] += getattr(response2.usage, "cache_read_input_tokens", 0)
+        total_usage["cache_write"] += getattr(
+            response2.usage, "cache_creation_input_tokens", 0
+        )
+        total_usage["cache_read"] += getattr(
+            response2.usage, "cache_read_input_tokens", 0
+        )
         for block in response2.content:
             if block.type == "tool_use" and block.name == "submit_claims":
                 return {

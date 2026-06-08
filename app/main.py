@@ -45,13 +45,15 @@ _log_counter = count(1)
 
 class _LogCaptureHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
-        _log_history.append({
-            "id": next(_log_counter),
-            "t": record.created,
-            "level": record.levelname,
-            "logger": record.name,
-            "msg": self.format(record),
-        })
+        _log_history.append(
+            {
+                "id": next(_log_counter),
+                "t": record.created,
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": self.format(record),
+            }
+        )
 
 
 _capture_handler = _LogCaptureHandler()
@@ -127,7 +129,9 @@ async def admin_health(_admin: str = Depends(require_admin)):
         "anthropic": {
             "model": settings.ANTHROPIC_MODEL,
             "api_key_set": bool(settings.ANTHROPIC_API_KEY),
-            "api_key_hint": f"...{settings.ANTHROPIC_API_KEY[-4:]}" if settings.ANTHROPIC_API_KEY else "",
+            "api_key_hint": f"...{settings.ANTHROPIC_API_KEY[-4:]}"
+            if settings.ANTHROPIC_API_KEY
+            else "",
         },
         "config": {
             "log_level": settings.LOG_LEVEL,
@@ -137,7 +141,6 @@ async def admin_health(_admin: str = Depends(require_admin)):
         "python_version": sys.version.split()[0],
     }
     try:
-
         proc = psutil.Process()
         mem = proc.memory_info()
         data["memory"] = {
@@ -200,13 +203,17 @@ async def patch_config(patch: ConfigPatch, _admin: str = Depends(require_admin))
     changed: dict = {}
     if patch.anthropic_model is not None:
         if patch.anthropic_model not in _EDITABLE_MODELS:
-            raise HTTPException(status_code=422, detail=f"Modèle inconnu : {patch.anthropic_model}")
+            raise HTTPException(
+                status_code=422, detail=f"Modèle inconnu : {patch.anthropic_model}"
+            )
         settings.ANTHROPIC_MODEL = patch.anthropic_model
         changed["anthropic_model"] = patch.anthropic_model
     if patch.log_level is not None:
         lvl = patch.log_level.upper()
         if lvl not in _VALID_LOG_LEVELS:
-            raise HTTPException(status_code=422, detail=f"Niveau inconnu : {patch.log_level}")
+            raise HTTPException(
+                status_code=422, detail=f"Niveau inconnu : {patch.log_level}"
+            )
         settings.LOG_LEVEL = lvl
         logging.getLogger("app").setLevel(lvl)
         changed["log_level"] = lvl

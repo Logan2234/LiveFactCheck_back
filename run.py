@@ -7,5 +7,5 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
         reload_includes=["*.py", ".env"],
-        use_colors=True,        
+        use_colors=True,
     )
