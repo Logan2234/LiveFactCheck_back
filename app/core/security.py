@@ -6,7 +6,7 @@ the password and signing secret come from .env.
 """
 
 import hmac
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -24,7 +24,7 @@ def check_password(password: str) -> bool:
 
 
 def create_token() -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": _SUBJECT,
         "iat": now,

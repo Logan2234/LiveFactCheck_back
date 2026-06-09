@@ -17,7 +17,7 @@ def test_valid_settings_build() -> None:
         ADMIN_PASSWORD="ok",
         JWT_SECRET="ok",
     )
-    
+
     assert settings.ADMIN_PASSWORD == "ok"
     assert settings.JWT_SECRET == "ok"
 

@@ -4,12 +4,12 @@ Mirrored front-side by the ``Claim`` shape in ``front/src/lib/stores/claims.ts``
 Any change here is a two-repo change (see ../../CLAUDE.md).
 """
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class VerificationStatus(str, Enum):
+class VerificationStatus(StrEnum):
     PENDING = "pending"
     VERIFIED = "verified"
     FALSE = "false"

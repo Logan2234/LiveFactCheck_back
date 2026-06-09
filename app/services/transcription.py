@@ -27,9 +27,7 @@ def _get_model() -> WhisperModel:
         _model = WhisperModel(
             settings.WHISPER_MODEL,
             device=settings.WHISPER_DEVICE,
-            compute_type="int8"
-            if settings.WHISPER_DEVICE == "cpu"
-            else "float16",
+            compute_type="int8" if settings.WHISPER_DEVICE == "cpu" else "float16",
         )
 
         logger.info("Whisper model loaded.")

@@ -57,6 +57,36 @@ exclude = [
 line-ending = "lf"
 docstring-code-format = true
 
+# Ruff lints only E/F by default. We opt into a broader, opinionated set: the
+# usual style/pyflakes rules plus import sorting, modern-syntax upgrades,
+# bugbears, comprehension/idiom and simplification checks. Each is a curated
+# group, not "everything" — ALL would drag in noisy, project-hostile rules.
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import order)
+    "N",    # pep8-naming
+    "UP",   # pyupgrade (modern syntax: list[str], X | None…)
+    "B",    # flake8-bugbear (likely bugs)
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "PTH",  # flake8-use-pathlib
+    "PIE",  # flake8-pie (misc idioms)
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    # FastAPI's whole API is "callable in argument default" (Depends, File,
+    # Query…). It's the documented pattern, not a bug — B008 is a false positive here.
+    "B008",
+]
+
+[tool.ruff.lint.isort]
+# Treat our own package as first-party so it lands in its own import group.
+known-first-party = ["app"]
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Pyright (type checking). CI runs `pyright app/`; this mirrors the old pyrightconfig.json.
 # ──────────────────────────────────────────────────────────────────────────────
