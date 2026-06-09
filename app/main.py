@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import admin, auth, fact_check, health, ws
+from app.config import settings
 from app.core.observability import setup_logging
 from app.services.transcription import preload_model
 
@@ -25,7 +26,7 @@ app = FastAPI(title="LiveFactChecker API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
