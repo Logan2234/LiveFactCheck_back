@@ -6,7 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        validate_assignment=True,
     )
 
     # Anthropic
@@ -16,8 +19,6 @@ class Settings(BaseSettings):
     # Whisper local
     WHISPER_MODEL: str = "medium"
     WHISPER_DEVICE: Literal["cpu", "cuda"] = "cpu"
-
-    MAX_CLAIMS_PER_CHUNK: int = 5
 
     # Upper bound on a single received audio blob (bytes), on /ws chunks and the
     # /admin/whisper/transcribe upload. ~5 s of WebM/Opus is well under this; the
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
     # within the rolling window before further attempts are rejected with 429.
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
+
+    AUTO_START_WHISPER: bool = True
 
     @field_validator("ANTHROPIC_API_KEY")
     @classmethod

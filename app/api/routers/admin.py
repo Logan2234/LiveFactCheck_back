@@ -8,28 +8,28 @@ config, an ad-hoc Whisper transcription probe and a model-test path.
 import asyncio
 import logging
 import sys
+from typing import Any
 
 import psutil
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import ValidationError
 
 from app.config import settings
+from app.core.config_descriptor import BLOCKS, ConfigField, field_by_key
 from app.core.observability import get_logs, uptime_seconds
 from app.dependencies import require_admin
 from app.schemas.admin import (
     AdminHealthResponse,
-    AnthropicInfo,
-    ConfigEditable,
-    ConfigOptions,
+    ConfigBlockOut,
+    ConfigFieldValue,
     ConfigPatch,
     ConfigPatchResponse,
-    ConfigReadonly,
     ConfigResponse,
-    HealthConfig,
     LogEntry,
     LogsResponse,
     MemoryInfo,
     PromptResponse,
-    WhisperInfo,
+    ValueType,
     WsStatusResponse,
 )
 from app.schemas.fact_check import ModelTestRequest, ModelTestResponse
@@ -48,12 +48,37 @@ router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
 )
 
-_EDITABLE_MODELS = [
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6",
-    "claude-opus-4-8",
-]
-_VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+def _apply_log_level(value: str) -> None:
+    logging.getLogger("app").setLevel(value)
+
+
+def _value_type(value: object) -> ValueType:
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, list):
+        return "list"
+    return "str"
+
+
+def _serialize_field(field: ConfigField) -> ConfigFieldValue:
+    raw = getattr(settings, field.key)
+    if field.kind == "secret_status":
+        # Raw secret never leaves the server — only whether it is set.
+        return ConfigFieldValue(
+            key=field.key, label=field.label, kind=field.kind, configured=bool(raw)
+        )
+
+    return ConfigFieldValue(
+        key=field.key,
+        label=field.label,
+        kind=field.kind,
+        value=raw,
+        options=list(field.options) if field.options else None,
+        value_type=_value_type(raw),
+    )
 
 
 @router.get("/health", response_model=AdminHealthResponse)
@@ -70,24 +95,8 @@ async def admin_health() -> AdminHealthResponse:
 
     return AdminHealthResponse(
         uptime_seconds=uptime_seconds(),
-        whisper=WhisperInfo(
-            model=settings.WHISPER_MODEL,
-            device=settings.WHISPER_DEVICE,
-            loaded=is_model_loaded(),
-        ),
-        anthropic=AnthropicInfo(
-            model=settings.ANTHROPIC_MODEL,
-            api_key_set=bool(settings.ANTHROPIC_API_KEY),
-            api_key_hint=f"...{settings.ANTHROPIC_API_KEY[-4:]}"
-            if settings.ANTHROPIC_API_KEY
-            else "",
-        ),
-        config=HealthConfig(
-            log_level=settings.LOG_LEVEL,
-            jwt_expire_hours=settings.JWT_EXPIRE_HOURS,
-            max_claims_per_chunk=settings.MAX_CLAIMS_PER_CHUNK,
-        ),
         python_version=sys.version.split()[0],
+        whisper_loaded=is_model_loaded(),
         memory=memory,
     )
 
@@ -104,47 +113,53 @@ async def admin_prompt() -> PromptResponse:
     )
 
 
-@router.get("/config", response_model=ConfigResponse)
+@router.get(
+    "/config",
+    response_model=ConfigResponse,
+    summary="Configuration actuelle du système",
+)
 async def admin_config() -> ConfigResponse:
+    blocks = [
+        ConfigBlockOut(
+            id=block.id,
+            title=block.title,
+            fields=[_serialize_field(f) for f in block.fields],
+        )
+        for block in BLOCKS
+    ]
+
     return ConfigResponse(
-        editable=ConfigEditable(
-            anthropic_model=settings.ANTHROPIC_MODEL,
-            log_level=settings.LOG_LEVEL,
-        ),
-        readonly=ConfigReadonly(
-            whisper_model=settings.WHISPER_MODEL,
-            whisper_device=settings.WHISPER_DEVICE,
-            jwt_expire_hours=settings.JWT_EXPIRE_HOURS,
-            max_claims_per_chunk=settings.MAX_CLAIMS_PER_CHUNK,
-        ),
-        options=ConfigOptions(
-            models=_EDITABLE_MODELS,
-            log_levels=_VALID_LOG_LEVELS,
-        ),
+        blocks=blocks,
         note="Les modifications sont perdues au redémarrage (--reload actif).",
     )
 
 
+# Side effects to run after a successful PATCH, beyond setting the attribute.
+_EDITABLE_SIDE_EFFECTS = {"LOG_LEVEL": _apply_log_level}
+
+
 @router.patch("/config", response_model=ConfigPatchResponse)
 async def patch_config(patch: ConfigPatch) -> ConfigPatchResponse:
-    changed: dict[str, str] = {}
-    if patch.anthropic_model is not None:
-        if patch.anthropic_model not in _EDITABLE_MODELS:
+    changed: dict[str, Any] = {}
+    for key, value in patch.updates.items():
+        field = field_by_key(key)
+        if field is None or field.kind != "editable":
+            raise HTTPException(status_code=422, detail=f"Champ non modifiable : {key}")
+        if field.options is not None and value not in field.options:
             raise HTTPException(
-                status_code=422,
-                detail=f"Modèle inconnu : {patch.anthropic_model}",
+                status_code=422, detail=f"Valeur invalide pour {key} : {value!r}"
             )
-        settings.ANTHROPIC_MODEL = patch.anthropic_model
-        changed["anthropic_model"] = patch.anthropic_model
-    if patch.log_level is not None:
-        lvl = patch.log_level.upper()
-        if lvl not in _VALID_LOG_LEVELS:
+        try:
+            # validate_assignment on Settings coerces & validates the new value.
+            setattr(settings, key, value)
+        except ValidationError as exc:
             raise HTTPException(
-                status_code=422, detail=f"Niveau inconnu : {patch.log_level}"
-            )
-        settings.LOG_LEVEL = lvl
-        logging.getLogger("app").setLevel(lvl)
-        changed["log_level"] = lvl
+                status_code=422, detail=f"Valeur invalide pour {key}"
+            ) from exc
+        side_effect = _EDITABLE_SIDE_EFFECTS.get(key)
+        if side_effect is not None:
+            side_effect(getattr(settings, key))
+        changed[key] = getattr(settings, key)
     return ConfigPatchResponse(changed=changed)
 
 
