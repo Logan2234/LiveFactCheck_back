@@ -163,6 +163,11 @@ async def admin_whisper_transcribe(file: UploadFile = File(...)) -> dict:
     audio_bytes = await file.read()
     if not audio_bytes:
         raise HTTPException(status_code=422, detail="Fichier vide")
+    if len(audio_bytes) > settings.MAX_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Fichier trop volumineux (max {settings.MAX_AUDIO_BYTES} octets)",
+        )
     # Diagnostic probe: the result shape varies (segments vs. an error key),
     # so it's returned as a plain dict rather than a fixed response_model.
     return await asyncio.to_thread(transcribe_with_detail, audio_bytes)

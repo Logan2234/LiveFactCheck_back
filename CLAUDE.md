@@ -15,7 +15,9 @@ extraction/verification via the Anthropic API. Plus an admin API under `/admin/*
   may not be, or may have drifted. Verify against the code before relying on it. When
   they disagree, **the code wins** — flag the gap, don't edit code to match the docs.
 - Update these files **only when I ask** (or at the end of a task I've validated).
-  No speculative or routine updates.
+  No speculative or routine updates. Exception: when I point to a specific TODO item
+  and ask you to handle it, update that line automatically (check it off / amend it)
+  as part of completing the task — no need to ask first.
 
 ## Commands
 

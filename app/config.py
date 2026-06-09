@@ -19,6 +19,11 @@ class Settings(BaseSettings):
 
     MAX_CLAIMS_PER_CHUNK: int = 5
 
+    # Upper bound on a single received audio blob (bytes), on /ws chunks and the
+    # /admin/whisper/transcribe upload. ~5 s of WebM/Opus is well under this; the
+    # cap guards against a malformed/oversized blob saturating memory. Default 10 MiB.
+    MAX_AUDIO_BYTES: int = 10 * 1024 * 1024
+
     LOG_LEVEL: str = "INFO"
 
     # CORS: origines autorisées pour le front (format JSON dans .env, ex.

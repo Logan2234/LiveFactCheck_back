@@ -13,6 +13,7 @@ import uuid
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from app.config import settings
 from app.schemas.claim import Claim, VerificationStatus
 from app.services.claim_extractor import MIN_WORDS, extract_and_verify
 from app.services.transcription import transcribe_chunk
@@ -143,6 +144,16 @@ async def run_session(ws: WebSocket):
 
             audio = message.get("bytes")
             if not audio:
+                continue
+
+            # Drop an oversized blob instead of killing the session: one bad
+            # chunk shouldn't end a legitimate live stream.
+            if len(audio) > settings.MAX_AUDIO_BYTES:
+                logger.warning(
+                    "Dropping oversized audio chunk: %d bytes (max %d)",
+                    len(audio),
+                    settings.MAX_AUDIO_BYTES,
+                )
                 continue
 
             session_info["chunks_received"] += 1
