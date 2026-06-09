@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from app.schemas.claim import Claim
+from app.schemas.claim import Claim, ClaimBase
 
 
 class FactCheckRequest(BaseModel):
@@ -28,7 +28,7 @@ class ModelTestUsage(BaseModel):
 
 
 class ModelTestResponse(BaseModel):
-    claims: list[Claim]
+    claims: list[ClaimBase]
     turns: int
     usage: ModelTestUsage | dict
     model: str

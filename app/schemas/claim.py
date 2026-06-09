@@ -17,8 +17,7 @@ class VerificationStatus(str, Enum):
     UNVERIFIABLE = "unverifiable"
 
 
-class Claim(BaseModel):
-    id: str
+class ClaimBase(BaseModel):
     text: str
     status: VerificationStatus = VerificationStatus.PENDING
     explanation: str = ""
@@ -28,6 +27,10 @@ class Claim(BaseModel):
     confidence: int = 0
     counter_claim: str = ""
     web_search_used: bool = False
+
+
+class Claim(ClaimBase):
+    id: str
 
 
 class TranscriptMessage(BaseModel):
