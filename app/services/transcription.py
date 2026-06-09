@@ -77,17 +77,12 @@ def transcribe_with_detail(audio: bytes) -> dict:
 def transcribe_chunk(audio: bytes) -> str:
     """Transcribe a self-contained audio chunk into plain text.
 
-    Accepts either raw encoded audio bytes (e.g. a complete WebM/Opus blob,
-    decoded via ffmpeg) or a float32 PCM array. Synchronous and CPU-bound —
-    call it from a thread pool.
+    Accepts raw encoded audio bytes (e.g. a complete WebM/Opus blob,
+    decoded via ffmpeg). Synchronous and CPU-bound — call it from a thread pool.
     """
-    model = _get_model()
-    # faster-whisper accepts a path, a file-like object, or a float32 ndarray.
-    # Encoded bytes (a WebM/Opus blob) must be wrapped so ffmpeg can decode them.
-    source = io.BytesIO(audio) if isinstance(audio, bytes) else audio
     try:
-        segments, _ = model.transcribe(
-            source,
+        segments, _ = _get_model().transcribe(
+            io.BytesIO(audio),
             language="fr",
             vad_filter=True,
         )
