@@ -5,27 +5,9 @@ Several payloads are intentionally loose (``dict``) where the shape is
 diagnostic-only and not part of a stable contract.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
-
-
-class WhisperInfo(BaseModel):
-    model: str
-    device: str
-    loaded: bool
-
-
-class AnthropicInfo(BaseModel):
-    model: str
-    api_key_set: bool
-    api_key_hint: str
-
-
-class HealthConfig(BaseModel):
-    log_level: str
-    jwt_expire_hours: int
-    max_claims_per_chunk: int
 
 
 class MemoryInfo(BaseModel):
@@ -34,11 +16,11 @@ class MemoryInfo(BaseModel):
 
 
 class AdminHealthResponse(BaseModel):
+    """Pure runtime health — static config lives in the descriptor (/admin/config)."""
+
     uptime_seconds: int
-    whisper: WhisperInfo
-    anthropic: AnthropicInfo
-    config: HealthConfig
     python_version: str
+    whisper_loaded: bool
     memory: MemoryInfo | None = None
 
 
@@ -51,37 +33,39 @@ class PromptResponse(BaseModel):
     model: str
 
 
-class ConfigPatch(BaseModel):
-    anthropic_model: str | None = None
-    log_level: str | None = None
+FieldKind = Literal["readonly", "editable", "secret_status"]
+ValueType = Literal["str", "int", "bool", "list"]
 
 
-class ConfigEditable(BaseModel):
-    anthropic_model: str
-    log_level: str
+class ConfigFieldValue(BaseModel):
+    """One config field rendered on the System page, driven by the descriptor."""
+
+    key: str
+    label: str
+    kind: FieldKind
+    value: Any | None = None  # None for secret_status (raw value never serialised)
+    configured: bool | None = None  # set only for secret_status
+    options: list[str] | None = None  # closed choice for an editable enum
+    value_type: ValueType | None = None  # drives the editable control on the front
 
 
-class ConfigReadonly(BaseModel):
-    whisper_model: str
-    whisper_device: str
-    jwt_expire_hours: int
-    max_claims_per_chunk: int
-
-
-class ConfigOptions(BaseModel):
-    models: list[str]
-    log_levels: list[str]
+class ConfigBlockOut(BaseModel):
+    id: str
+    title: str
+    fields: list[ConfigFieldValue]
 
 
 class ConfigResponse(BaseModel):
-    editable: ConfigEditable
-    readonly: ConfigReadonly
-    options: ConfigOptions
+    blocks: list[ConfigBlockOut]
     note: str
 
 
+class ConfigPatch(BaseModel):
+    updates: dict[str, Any]  # {settings key: new value}, editable fields only
+
+
 class ConfigPatchResponse(BaseModel):
-    changed: dict[str, str]
+    changed: dict[str, Any]
 
 
 class LogEntry(BaseModel):

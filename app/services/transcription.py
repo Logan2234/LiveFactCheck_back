@@ -12,7 +12,8 @@ _model = None
 
 
 def preload_model() -> None:
-    _get_model()
+    if settings.AUTO_START_WHISPER:
+        _get_model()
 
 
 def _get_model() -> WhisperModel:
