@@ -39,7 +39,6 @@ Aujourd'hui seul `tests/test_claim_extractor.py` existe. Manquent :
 ## Architecture & dette
 
 - [ ] `_active_sessions` est un dict global au niveau module : OK pour un process unique, mais à documenter comme limite (ne survit pas à plusieurs workers / un restart).
-- [ ] CLAUDE.md racine évoque `back/app/models/schemas.py` alors que les schémas vivent dans `app/schemas/` — aligner la doc (le code fait foi).
 - [ ] Transcription figée en français (`language="fr"`) + prompt/catégories FR : si le multilingue est visé un jour, le rendre configurable.
 
 ## Observabilité
