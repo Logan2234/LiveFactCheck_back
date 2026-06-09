@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     JWT_SECRET: str = ""
     JWT_EXPIRE_HOURS: int = 12
 
+    # Brute-force protection on /admin/login: max failed attempts per client IP
+    # within the rolling window before further attempts are rejected with 429.
+    LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
+
     @field_validator("ANTHROPIC_API_KEY")
     @classmethod
     def api_key_must_be_set(cls, v: str) -> str:

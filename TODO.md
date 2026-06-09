@@ -47,13 +47,13 @@ Aujourd'hui seul `tests/test_claim_extractor.py` existe. Manquent :
 
 ## Robustesse & sécurité
 
-- [ ] CORS : `allow_origins=["*"]` dans `main.py` — restreindre à l'origine du front
+- [x] CORS : `allow_origins=["*"]` dans `main.py` — restreindre à l'origine du front
       (via une variable de config `ALLOWED_ORIGINS`) avant tout déploiement.
-- [ ] Rate-limiting sur `/admin/login` (brute-force du mot de passe admin actuellement libre).
-- [ ] Vérifier qu'un `.env.example` existe et liste toutes les vars de `config.py`
+- [x] Rate-limiting sur `/admin/login` (brute-force du mot de passe admin actuellement libre).
+- [x] Vérifier qu'un `.env.example` existe et liste toutes les vars de `config.py`
       (`ANTHROPIC_*`, `WHISPER_*`, `ADMIN_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRE_HOURS`…)
       sans valeurs réelles.
-- [ ] `JWT_SECRET` / `ADMIN_PASSWORD` vides par défaut : faire échouer le démarrage
+- [x] `JWT_SECRET` / `ADMIN_PASSWORD` vides par défaut : faire échouer le démarrage
       si l'admin est monté sans secret défini (même logique que le validator `ANTHROPIC_API_KEY`).
 - [ ] Borne la taille des blobs audio reçus sur `/ws` et sur `/admin/whisper/transcribe`
       (refus si trop gros) pour éviter une saturation mémoire.
