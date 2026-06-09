@@ -7,6 +7,16 @@ read it for anything descriptive; this file is only conventions and traps.
 FastAPI service: audio over `/ws` → local transcription (faster-whisper) → claim
 extraction/verification via the Anthropic API. Plus an admin API under `/admin/*`.
 
+## Tracking files (TODO.md, README.md)
+
+- Read them at the start of a task for **direction and intent** — where the project
+  is headed and the why behind choices.
+- Treat their **progress/done state as a hint, not the truth**: a task marked done
+  may not be, or may have drifted. Verify against the code before relying on it. When
+  they disagree, **the code wins** — flag the gap, don't edit code to match the docs.
+- Update these files **only when I ask** (or at the end of a task I've validated).
+  No speculative or routine updates.
+
 ## Commands
 
 Own git repo — run git/CI from `backend/`. Default shell is PowerShell 5.1, where `&&`
