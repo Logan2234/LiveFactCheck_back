@@ -74,32 +74,28 @@ def transcribe_with_detail(audio: bytes) -> dict:
         return {"error": str(e), "text": "", "segments": []}
 
 
-def transcribe_chunk(
-    audio: bytes, language: str | None = None
-) -> tuple[str, str | None, float | None]:
+def transcribe_chunk(audio: bytes) -> tuple[str, str, float]:
     """Transcribe a self-contained audio chunk into plain text.
 
     Accepts raw encoded audio bytes (e.g. a complete WebM/Opus blob,
     decoded via ffmpeg). Synchronous and CPU-bound — call it from a thread pool.
 
-    ``language`` is an ISO code to force a language, or ``None`` to auto-detect.
-    Returns ``(text, detected_language, detected_probability)``; the detected
-    fields are only populated in auto mode (when ``language is None``) — when a
-    language is forced there's nothing to report back.
+    Always auto-detects the language: forcing a non-matching language makes
+    Whisper translate/hallucinate into that language rather than transcribe
+    phonetically (there's no "transcribe verbatim" knob). The detected language
+    is returned so the caller can filter on it instead.
+
+    Returns ``(text, detected_language, detected_probability)``; on error the
+    text is empty and the language fields are ``("", 0.0)``.
     """
     try:
         segments, info = _get_model().transcribe(
             io.BytesIO(audio),
-            language=language,
+            language=None,
             vad_filter=True,
         )
-
         text = "".join(seg.text for seg in segments).strip()
-
-        if language is None:
-            return text, info.language, round(info.language_probability, 3)
-
-        return text, None, None
+        return text, info.language, round(info.language_probability, 3)
     except Exception as e:
         logger.error("Whisper transcription error: %s", e)
-        return "", None, None
+        return "", "", 0.0

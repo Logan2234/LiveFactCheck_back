@@ -36,8 +36,10 @@ class Claim(ClaimBase):
 class TranscriptMessage(BaseModel):
     type: str = "transcript"
     text: str
-    language: str | None = None
-    language_probability: float | None = None
+    # The language Whisper detected for this chunk and its probability.
+    # Always present: transcription always runs in auto-detect mode.
+    language: str
+    language_probability: float
 
 
 class ClaimMessage(BaseModel):

@@ -15,7 +15,7 @@ rien n'est conservé, un seul utilisateur, vérification figée en français.
 - [ ] **Cache de vérification** : mémoriser le résultat d'un claim déjà vérifié (clé = texte normalisé) pour ne pas repayer un appel sur une affirmation identique.
 - [ ] **Webhook / notification sur claim "false"** : pousser une alerte (webhook configurable) quand un fait est démenti, pour intégration externe (overlay OBS, Slack…).
 - [ ] **Stats agrégées par session** : ratio vrai/faux/incertain, catégorie dominante, taux de recours au web — exposé en fin de session et dans l'admin.
-- [ ] **Multilingue (prompt Claude)** : la `language` de transcription est désormais configurable par session (mode auto par défaut, voir `core/languages.py` + `ConfigMessage`). Reste à adapter `SYSTEM_PROMPT` et l'enum de catégories de `claim_extractor.py` à la langue de la session — actuellement figés FR, donc les claims sortent en français même pour un audio non francophone.
+- [ ] **Multilingue (prompt Claude)** : la transcription tourne toujours en auto-détection ; la langue choisie par session sert de *filtre* (les chunks d'une autre langue sont ignorés, voir `core/languages.py` + `ConfigMessage` + le filtre dans `session.py`). Reste à adapter `SYSTEM_PROMPT` et l'enum de catégories de `claim_extractor.py` à la langue de la session — actuellement figés FR, donc les claims sortent en français même pour un audio non francophone.
 - [ ] **Niveau de vérification réglable** : exposer côté contrat un mode « rapide » (connaissances internes seules) vs « approfondi » (web_search systématique), au lieu du `web_search=auto` actuel.
 
 ## Tests (priorité haute)
@@ -39,7 +39,7 @@ Aujourd'hui seul `tests/test_claim_extractor.py` existe. Manquent :
 ## Architecture & dette
 
 - [ ] `_active_sessions` est un dict global au niveau module : OK pour un process unique, mais à documenter comme limite (ne survit pas à plusieurs workers / un restart).
-- [ ] Transcription : la langue est configurable par session (auto par défaut). Le prompt/catégories de fact-checking restent figés FR — voir la ligne « Multilingue (prompt Claude) » ci-dessus.
+- [ ] Transcription : toujours en auto-détection ; la langue par session filtre les chunks (cf. ci-dessus). Le prompt/catégories de fact-checking restent figés FR — voir la ligne « Multilingue (prompt Claude) ».
 
 ## Observabilité
 

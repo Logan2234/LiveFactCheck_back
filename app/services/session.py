@@ -202,10 +202,11 @@ async def run_session(ws: WebSocket):
             session_info["chunks_received"] += 1
             session_info["last_activity"] = time.time()
 
-            language = session_info["language"]
+            # Always transcribe in auto-detect: forcing a language would make
+            # Whisper translate a mismatched chunk instead of transcribing it.
             try:
                 transcript, detected_lang, detected_prob = await loop.run_in_executor(
-                    None, transcribe_chunk, audio, language
+                    None, transcribe_chunk, audio
                 )
             except Exception as e:
                 logger.error("Transcription error: %s", e)
@@ -214,17 +215,30 @@ async def run_session(ws: WebSocket):
             if not transcript:
                 continue
 
+            # The chosen language is a filter, not a forced transcription target:
+            # drop a chunk whose detected language doesn't match (None = accept all).
+            language = session_info["language"]
+            if language is not None and detected_lang != language:
+                logger.info(
+                    "Skipping chunk: detected %s, session filter is %s",
+                    detected_lang,
+                    language,
+                )
+                continue
+
             session_info["transcripts"] += 1
             session_info["last_transcript"] = transcript[:120]
             session_info["last_activity"] = time.time()
 
             logger.info(transcript)
-            # Report the detected language only in auto mode (it's None otherwise).
-            message_out: dict = {"type": "transcript", "text": transcript}
-            if detected_lang is not None:
-                message_out["language"] = detected_lang
-                message_out["language_probability"] = detected_prob
-            await ws.send_json(message_out)
+            await ws.send_json(
+                {
+                    "type": "transcript",
+                    "text": transcript,
+                    "language": detected_lang,
+                    "language_probability": detected_prob,
+                }
+            )
             _spawn_claims(ws, transcript, background_tasks, session_info)
 
     except (WebSocketDisconnect, RuntimeError):
