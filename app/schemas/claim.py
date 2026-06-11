@@ -36,8 +36,21 @@ class Claim(ClaimBase):
 class TranscriptMessage(BaseModel):
     type: str = "transcript"
     text: str
+    language: str | None = None
+    language_probability: float | None = None
 
 
 class ClaimMessage(BaseModel):
     type: str = "claim"
     claim: Claim
+
+
+class ConfigMessage(BaseModel):
+    """Client → server session config (sent as a text frame on the socket).
+
+    ``language`` is the ``"auto"`` sentinel or an ISO code; it is normalized
+    against the supported set when applied (an unknown code falls back to auto).
+    """
+
+    type: str = "config"
+    language: str

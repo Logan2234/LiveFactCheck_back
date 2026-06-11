@@ -6,15 +6,18 @@ definitions.
 """
 
 import asyncio
+import json
 import logging
 import time
 import uuid
 
 from fastapi import WebSocket
+from pydantic import ValidationError
 from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
-from app.schemas.claim import Claim, VerificationStatus
+from app.core.languages import normalize_language
+from app.schemas.claim import Claim, ConfigMessage, VerificationStatus
 from app.services.claim_extractor import MIN_WORDS, extract_and_verify
 from app.services.transcription import transcribe_chunk
 
@@ -36,6 +39,7 @@ def get_sessions_status() -> dict:
             "claims_spawned": s["claims_spawned"],
             "active_tasks": len(s["_tasks"]),
             "last_transcript": s["last_transcript"],
+            "language": s["language"] or "auto",
             "idle_s": round(now - s["last_activity"]),
         }
         for s in _active_sessions.values()
@@ -106,6 +110,27 @@ def _spawn_claims(
     task.add_done_callback(background_tasks.discard)
 
 
+def parse_config_language(raw: str) -> str | None:
+    """Extract a normalized transcription language from a client config frame.
+
+    ``raw`` is the text payload of a WebSocket frame. Returns the language to use
+    (``None`` for auto-detect, or a supported ISO code), or raises ``ValueError``
+    if the frame isn't a valid ``config`` message — the caller logs and ignores
+    it rather than dropping the session.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"invalid JSON: {e}") from e
+    if not isinstance(data, dict) or data.get("type") != "config":
+        raise ValueError("not a config message")
+    try:
+        msg = ConfigMessage.model_validate(data)
+    except ValidationError as e:
+        raise ValueError(f"invalid config message: {e}") from e
+    return normalize_language(msg.language)
+
+
 async def run_session(ws: WebSocket):
     """Drive one WebSocket connection: receive chunks, transcribe, fact-check.
 
@@ -131,6 +156,9 @@ async def run_session(ws: WebSocket):
         "claims_spawned": 0,
         "_tasks": background_tasks,
         "last_transcript": "",
+        # Transcription language: None = auto-detect (the default until the
+        # client sends a config frame), or a forced ISO code.
+        "language": None,
         "last_activity": time.time(),
     }
     _active_sessions[session_id] = session_info
@@ -141,6 +169,21 @@ async def run_session(ws: WebSocket):
             message = await ws.receive()
             if message.get("type") == "websocket.disconnect":
                 break
+
+            # Text frames carry session config (e.g. the chosen language); binary
+            # frames carry audio. A malformed config is logged and ignored.
+            config = message.get("text")
+            if config is not None:
+                try:
+                    session_info["language"] = parse_config_language(config)
+                    logger.info(
+                        "WS session %s language set to %s",
+                        session_id[:8],
+                        session_info["language"] or "auto",
+                    )
+                except ValueError as e:
+                    logger.warning("Ignoring config frame: %s", e)
+                continue
 
             audio = message.get("bytes")
             if not audio:
@@ -159,8 +202,11 @@ async def run_session(ws: WebSocket):
             session_info["chunks_received"] += 1
             session_info["last_activity"] = time.time()
 
+            language = session_info["language"]
             try:
-                transcript = await loop.run_in_executor(None, transcribe_chunk, audio)
+                transcript, detected_lang, detected_prob = await loop.run_in_executor(
+                    None, transcribe_chunk, audio, language
+                )
             except Exception as e:
                 logger.error("Transcription error: %s", e)
                 continue
@@ -173,7 +219,12 @@ async def run_session(ws: WebSocket):
             session_info["last_activity"] = time.time()
 
             logger.info(transcript)
-            await ws.send_json({"type": "transcript", "text": transcript})
+            # Report the detected language only in auto mode (it's None otherwise).
+            message_out: dict = {"type": "transcript", "text": transcript}
+            if detected_lang is not None:
+                message_out["language"] = detected_lang
+                message_out["language_probability"] = detected_prob
+            await ws.send_json(message_out)
             _spawn_claims(ws, transcript, background_tasks, session_info)
 
     except (WebSocketDisconnect, RuntimeError):
