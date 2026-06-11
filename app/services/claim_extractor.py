@@ -81,15 +81,23 @@ CLAIM_TOOL: ToolParam = {
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 10,
-                            "description": "Confiance de 0 (très incertain) à 10 (certain)",
+                            "description": (
+                                "Confiance de 0 (très incertain) à 10 (certain)"
+                            ),
                         },
                         "counter_claim": {
                             "type": "string",
-                            "description": "Si le claim est faux : la réalité correcte. Vide sinon.",
+                            "description": (
+                                "Si le claim est faux : la réalité correcte. "
+                                "Vide sinon."
+                            ),
                         },
                         "web_search_used": {
                             "type": "boolean",
-                            "description": "True si une recherche web a été utilisée pour vérifier ce claim",
+                            "description": (
+                                "True si une recherche web a été utilisée "
+                                "pour vérifier ce claim"
+                            ),
                         },
                     },
                     "required": [
@@ -109,15 +117,28 @@ CLAIM_TOOL: ToolParam = {
     },
 }
 
-SYSTEM_PROMPT = """Tu es un fact-checker francophone expert.
-
-Extraction : n'extrais QUE les faits vérifiables (chiffres, dates, statistiques, événements, déclarations attribuées). Ignore les opinions et déclarations personnelles. Si un fait peut être vérifié mais tu n'as pas assez d'infos pour le faire de façon fiable, classe-le comme "uncertain" et explique pourquoi. Si aucun fait vérifiable, liste vide.
-
-Vérification — par défaut, vérifie avec tes connaissances internes SANS recherche web. N'utilise web_search QUE si le fait dépend d'informations récentes ou changeantes que tu ne peux pas connaître de façon fiable (actualité, événements récents, chiffres ou statuts qui évoluent, déclarations très récentes).
-N'utilise JAMAIS web_search pour des faits établis et immuables (dates historiques, mesures physiques, géographie, faits scientifiques connus) : tu les connais déjà.
-Quand tu as effectué une recherche, mets les URLs dans "sources".
-
-Remplis confidence (0-10) et, pour un claim "false", counter_claim. Termine par submit_claims."""
+SYSTEM_PROMPT = (
+    "Tu es un fact-checker francophone expert.\n"
+    "\n"
+    "Extraction : n'extrais QUE les faits vérifiables (chiffres, dates, "
+    "statistiques, événements, déclarations attribuées). Ignore les opinions et "
+    "déclarations personnelles. Si un fait peut être vérifié mais tu n'as pas "
+    'assez d\'infos pour le faire de façon fiable, classe-le comme "uncertain" '
+    "et explique pourquoi. Si aucun fait vérifiable, liste vide.\n"
+    "\n"
+    "Vérification — par défaut, vérifie avec tes connaissances internes SANS "
+    "recherche web. N'utilise web_search QUE si le fait dépend d'informations "
+    "récentes ou changeantes que tu ne peux pas connaître de façon fiable "
+    "(actualité, événements récents, chiffres ou statuts qui évoluent, "
+    "déclarations très récentes).\n"
+    "N'utilise JAMAIS web_search pour des faits établis et immuables (dates "
+    "historiques, mesures physiques, géographie, faits scientifiques connus) : "
+    "tu les connais déjà.\n"
+    'Quand tu as effectué une recherche, mets les URLs dans "sources".\n'
+    "\n"
+    'Remplis confidence (0-10) et, pour un claim "false", counter_claim. '
+    "Termine par submit_claims."
+)
 
 
 def _parse_claims(claims_raw: list[Any]) -> list[dict[str, Any]]:
@@ -196,7 +217,8 @@ async def extract_and_verify(
     )
     _log_usage("extract", response.usage)
 
-    # Happy path: submit_claims present in first response (with or without prior web_search)
+    # Happy path: submit_claims present in first response
+    # (with or without prior web_search)
     claims = _claims_from_response(response)
     if claims is not None:
         return claims
@@ -208,7 +230,10 @@ async def extract_and_verify(
         messages.append(
             {
                 "role": "user",
-                "content": "Utilise maintenant submit_claims pour structurer les claims identifiés.",
+                "content": (
+                    "Utilise maintenant submit_claims pour structurer "
+                    "les claims identifiés."
+                ),
             }
         )
         response2 = await _client.messages.create(
@@ -274,7 +299,10 @@ async def debug_extract(text: str, web_search: bool = True) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Utilise maintenant submit_claims pour structurer les claims identifiés.",
+                "content": (
+                    "Utilise maintenant submit_claims pour structurer "
+                    "les claims identifiés."
+                ),
             }
         )
         response2 = await _client.messages.create(

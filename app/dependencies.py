@@ -25,9 +25,9 @@ def require_admin(
         )
     try:
         return decode_token(creds.credentials)
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token invalide ou expiré",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from err
