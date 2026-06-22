@@ -17,6 +17,19 @@ class VerificationStatus(StrEnum):
     UNVERIFIABLE = "unverifiable"
 
 
+class VerificationLevel(StrEnum):
+    """How thoroughly a session verifies claims (speed vs depth trade-off).
+
+    ``FAST`` checks against the model's internal knowledge only (no web_search
+    tool offered, so a single quick API call). ``THOROUGH`` makes web_search
+    available, letting the model look up recent/changing facts at the cost of
+    extra latency. ``THOROUGH`` is the default — it preserves prior behaviour.
+    """
+
+    FAST = "fast"
+    THOROUGH = "thorough"
+
+
 class ClaimBase(BaseModel):
     text: str
     status: VerificationStatus = VerificationStatus.PENDING
@@ -52,7 +65,10 @@ class ConfigMessage(BaseModel):
 
     ``language`` is the ``"auto"`` sentinel or an ISO code; it is normalized
     against the supported set when applied (an unknown code falls back to auto).
+    ``verification_level`` picks the speed/depth trade-off; it defaults to
+    ``THOROUGH`` so an older client that omits it keeps the previous behaviour.
     """
 
     type: str = "config"
     language: str
+    verification_level: VerificationLevel = VerificationLevel.THOROUGH

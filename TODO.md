@@ -16,7 +16,7 @@ rien n'est conservé, un seul utilisateur, vérification figée en français.
 - [ ] **Webhook / notification sur claim "false"** : pousser une alerte (webhook configurable) quand un fait est démenti, pour intégration externe (overlay OBS, Slack…).
 - [ ] **Stats agrégées par session** : ratio vrai/faux/incertain, catégorie dominante, taux de recours au web — exposé en fin de session et dans l'admin.
 - [ ] **Multilingue (prompt Claude)** : la transcription tourne toujours en auto-détection ; la langue choisie par session sert de *filtre* (les chunks d'une autre langue sont ignorés, voir `core/languages.py` + `ConfigMessage` + le filtre dans `session.py`). Reste à adapter `SYSTEM_PROMPT` et l'enum de catégories de `claim_extractor.py` à la langue de la session — actuellement figés FR, donc les claims sortent en français même pour un audio non francophone.
-- [ ] **Niveau de vérification réglable** : exposer côté contrat un mode « rapide » (connaissances internes seules) vs « approfondi » (web_search systématique), au lieu du `web_search=auto` actuel.
+- [x] **Niveau de vérification réglable** : le message WS `config` porte un champ `verification_level` (`fast` / `thorough`, défaut `thorough`). `fast` n'offre pas l'outil `web_search` (un seul appel, connaissances internes) ; `thorough` le rend disponible (comportement antérieur). Plumbing `session.py` → `extract_and_verify(web_search=…)`.
 
 ## Tests (priorité haute)
 

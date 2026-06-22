@@ -17,7 +17,12 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
 from app.core.languages import normalize_language
-from app.schemas.claim import Claim, ConfigMessage, VerificationStatus
+from app.schemas.claim import (
+    Claim,
+    ConfigMessage,
+    VerificationLevel,
+    VerificationStatus,
+)
 from app.services.claim_extractor import MIN_WORDS, extract_and_verify
 from app.services.transcription import transcribe_chunk
 
@@ -62,7 +67,7 @@ def _make_claim(result: dict, claim_id: str, timestamp: int) -> Claim:
     )
 
 
-async def _process_claims(ws: WebSocket, transcript: str):
+async def _process_claims(ws: WebSocket, transcript: str, web_search: bool):
     """Show a pending claim, then replace/remove it with the verified results."""
     try:
         pending_id = str(uuid.uuid4())
@@ -75,7 +80,7 @@ async def _process_claims(ws: WebSocket, transcript: str):
         )
         await ws.send_json({"type": "claim", "claim": pending.model_dump()})
 
-        results = await extract_and_verify(transcript)
+        results = await extract_and_verify(transcript, web_search=web_search)
         if not results:
             await ws.send_json({"type": "remove_claim", "id": pending_id})
             return
@@ -105,18 +110,22 @@ def _spawn_claims(
     if len(transcript.split()) < MIN_WORDS:
         return
     session_info["claims_spawned"] += 1
-    task = asyncio.create_task(_process_claims(ws, transcript))
+    # THOROUGH offers the web_search tool; FAST keeps verification to internal
+    # knowledge for a single, faster API call.
+    web_search = session_info["verification_level"] == VerificationLevel.THOROUGH
+    task = asyncio.create_task(_process_claims(ws, transcript, web_search))
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
 
 
-def parse_config_language(raw: str) -> str | None:
-    """Extract a normalized transcription language from a client config frame.
+def parse_config(raw: str) -> ConfigMessage:
+    """Parse and validate a client config frame.
 
-    ``raw`` is the text payload of a WebSocket frame. Returns the language to use
-    (``None`` for auto-detect, or a supported ISO code), or raises ``ValueError``
-    if the frame isn't a valid ``config`` message — the caller logs and ignores
-    it rather than dropping the session.
+    ``raw`` is the text payload of a WebSocket frame. Returns the validated
+    ``ConfigMessage`` (the caller normalizes ``language`` and reads
+    ``verification_level``), or raises ``ValueError`` if the frame isn't a valid
+    ``config`` message — the caller logs and ignores it rather than dropping the
+    session.
     """
     try:
         data = json.loads(raw)
@@ -125,10 +134,9 @@ def parse_config_language(raw: str) -> str | None:
     if not isinstance(data, dict) or data.get("type") != "config":
         raise ValueError("not a config message")
     try:
-        msg = ConfigMessage.model_validate(data)
+        return ConfigMessage.model_validate(data)
     except ValidationError as e:
         raise ValueError(f"invalid config message: {e}") from e
-    return normalize_language(msg.language)
 
 
 async def run_session(ws: WebSocket):
@@ -159,6 +167,9 @@ async def run_session(ws: WebSocket):
         # Transcription language: None = auto-detect (the default until the
         # client sends a config frame), or a forced ISO code.
         "language": None,
+        # Speed/depth trade-off for fact-checking; THOROUGH (web_search allowed)
+        # until the client says otherwise, matching the prior default.
+        "verification_level": VerificationLevel.THOROUGH,
         "last_activity": time.time(),
     }
     _active_sessions[session_id] = session_info
@@ -175,11 +186,14 @@ async def run_session(ws: WebSocket):
             config = message.get("text")
             if config is not None:
                 try:
-                    session_info["language"] = parse_config_language(config)
+                    cfg = parse_config(config)
+                    session_info["language"] = normalize_language(cfg.language)
+                    session_info["verification_level"] = cfg.verification_level
                     logger.info(
-                        "WS session %s language set to %s",
+                        "WS session %s config: language=%s verification=%s",
                         session_id[:8],
                         session_info["language"] or "auto",
+                        session_info["verification_level"].value,
                     )
                 except ValueError as e:
                     logger.warning("Ignoring config frame: %s", e)
