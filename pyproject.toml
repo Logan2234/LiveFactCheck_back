@@ -34,6 +34,14 @@ dev = [
     "pytest-cov>=7.1.0",
 ]
 
+# GPU transcription (WHISPER_DEVICE=cuda): CUDA 12 runtime libs that ctranslate2
+# needs but doesn't bundle. Install with `pip install -e ".[gpu]"` on a machine
+# with an NVIDIA GPU. cuDNN is pinned to 9.x (the major ctranslate2 4.7 expects).
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12>=9.0,<10",
+]
+
 # Discover app/ and its subpackages (api, core, schemas, services, models).
 [tool.setuptools.packages.find]
 include = ["app*"]

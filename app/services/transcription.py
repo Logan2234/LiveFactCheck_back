@@ -1,6 +1,10 @@
+import importlib.util
 import io
 import logging
+import os
+import sys
 import time
+from pathlib import Path
 
 from faster_whisper import WhisperModel
 
@@ -11,6 +15,26 @@ logger = logging.getLogger(__name__)
 _model = None
 
 
+def _expose_cuda_libs() -> None:
+    """Make the pip-installed NVIDIA CUDA DLLs loadable on Windows.
+
+    The ``nvidia-cublas-cu12`` / ``nvidia-cudnn-cu12`` wheels drop their DLLs
+    under ``site-packages/nvidia/*/bin``, which Windows doesn't search by
+    default. ctranslate2's CUDA backend needs cuBLAS/cuDNN at inference time, so
+    register those dirs before the model loads. No-op off Windows (Linux wheels
+    expose their libs via RPATH) and when the ``nvidia`` namespace isn't present.
+    """
+    if sys.platform != "win32":
+        return
+    spec = importlib.util.find_spec("nvidia")
+    if spec is None or not spec.submodule_search_locations:
+        return
+    nvidia_root = Path(next(iter(spec.submodule_search_locations)))
+    for bin_dir in nvidia_root.glob("*/bin"):
+        if bin_dir.is_dir():
+            os.add_dll_directory(str(bin_dir))
+
+
 def preload_model() -> None:
     if settings.AUTO_START_WHISPER:
         _get_model()
@@ -19,6 +43,9 @@ def preload_model() -> None:
 def _get_model() -> WhisperModel:
     global _model
     if _model is None:
+        if settings.WHISPER_DEVICE == "cuda":
+            _expose_cuda_libs()
+
         logger.info(
             "Loading Whisper model '%s' on %s...",
             settings.WHISPER_MODEL,
