@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import anthropic
@@ -19,6 +20,21 @@ _client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 MIN_WORDS = 3
 VALID_STATUSES = {"verified", "false", "uncertain", "unverifiable"}
+
+
+@dataclass
+class ExtractResult:
+    """Outcome of one extraction pass: the claims plus the call's measurements.
+
+    ``usage`` keys mirror :func:`_usage_dict` (input/output/cache_read/cache_write);
+    ``api_calls`` is 1, or 2 when the two-turn fallback fired; ``web_search_calls``
+    counts the server-side web_search invocations across all turns.
+    """
+
+    claims: list[dict[str, Any]]
+    usage: dict[str, int] = field(default_factory=dict)
+    api_calls: int = 0
+    web_search_calls: int = 0
 
 
 def _log_usage(label: str, usage: Usage) -> None:
@@ -134,6 +150,19 @@ SYSTEM_PROMPT = (
     'pour trancher de façon fiable, classe-le "uncertain" et explique pourquoi. '
     "Si rien à extraire, liste vide.\n"
     "\n"
+    "Contexte — le message peut contenir un bloc « Contexte précédent » suivi "
+    "d'un « Texte à analyser ». N'extrais et ne vérifie QUE les affirmations du "
+    "« Texte à analyser » ; le contexte sert uniquement à lever les références "
+    "(« de même », « idem », « donc », pronoms, sujets implicites). Reformule le "
+    "champ text de chaque claim pour qu'il soit autosuffisant et compréhensible "
+    "sans le contexte. RÈGLE CRITIQUE : reformule toujours l'affirmation telle que "
+    "le locuteur la pose, en préservant sa polarité (affirmation ou négation). "
+    "Ex. positif : contexte « 1 + 1 = 2 », texte « Il en est de même de 1*2 » "
+    "→ text = « 1 * 2 = 2 » (verified). "
+    "Ex. négatif : contexte « 1 + 1 = 2 », texte « Ce n'est pas le cas pour 4+4 » "
+    "→ text = « 4 + 4 != 2 » (verified, car le locuteur a raison). "
+    "Ne jamais extraire le fait sous-jacent nié comme si le locuteur l'affirmait.\n"
+    "\n"
     "Vérification — par défaut, vérifie avec tes connaissances internes SANS "
     "recherche web. N'utilise web_search QUE si le fait dépend d'informations "
     "récentes ou changeantes que tu ne peux pas connaître de façon fiable "
@@ -147,6 +176,24 @@ SYSTEM_PROMPT = (
     'Remplis confidence (0-10) et, pour un claim "false", counter_claim. '
     "Termine par submit_claims."
 )
+
+
+def _build_analysis_prompt(text: str, context: list[str] | None) -> str:
+    """Build the user message, prepending recent utterances as read-only context.
+
+    Without context the model sees the utterance alone and can't resolve a
+    back-reference ("Il en est de même de…"). We label the two blocks so the
+    system prompt can tell the model to extract only from the current text.
+    """
+    if not context:
+        return f"Analyse ce texte :\n\n{text}"
+    preceding = "\n".join(context)
+    return (
+        "Contexte précédent (pour comprendre les références ; "
+        "n'en extrais AUCUN claim) :\n\n"
+        f"{preceding}\n\n"
+        f"Texte à analyser :\n\n{text}"
+    )
 
 
 def _parse_claims(claims_raw: list[Any]) -> list[dict[str, Any]]:
@@ -198,22 +245,42 @@ def _usage_dict(usage: Usage) -> dict[str, int]:
     }
 
 
-def _web_search_called(response: Message) -> bool:
-    return any(
+def _add_usage(total: dict[str, int], usage: Usage) -> None:
+    """Accumulate one response's usage into a running per-call total."""
+    for key, value in _usage_dict(usage).items():
+        total[key] = total.get(key, 0) + value
+
+
+def _count_web_search(response: Message) -> int:
+    return sum(
         block.type == "server_tool_use" and block.name == "web_search"
         for block in response.content
     )
 
 
+_FORCE_SUBMIT_MSG = (
+    "Utilise maintenant submit_claims pour structurer les claims identifiés."
+)
+
+
 async def extract_and_verify(
-    text: str, web_search: bool = True
-) -> list[dict[str, Any]]:
+    text: str, context: list[str] | None = None, web_search: bool = True
+) -> ExtractResult:
+    """Extract and verify claims, returning the claims plus the call's measurements.
+
+    The measurements (token usage, number of API calls, web_search count) are what
+    the persistence layer records on the transcript segment; callers that only need
+    the claims read ``result.claims``.
+    """
     if len(text.split()) < MIN_WORDS:
-        return []
+        return ExtractResult(claims=[])
 
     messages: list[MessageParam] = [
-        {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
+        {"role": "user", "content": _build_analysis_prompt(text, context)}
     ]
+    usage_total: dict[str, int] = {}
+    web_search_calls = 0
+    api_calls = 0
 
     response = await _client.messages.create(
         model=settings.ANTHROPIC_MODEL,
@@ -223,27 +290,18 @@ async def extract_and_verify(
         tools=_build_tools(web_search),
         tool_choice={"type": "auto"},
     )
+    api_calls += 1
     _log_usage("extract", response.usage)
+    _add_usage(usage_total, response.usage)
+    web_search_calls += _count_web_search(response)
 
-    # Happy path: submit_claims present in first response
-    # (with or without prior web_search)
+    # Happy path: submit_claims present in the first response (with or without a
+    # prior web_search). Otherwise, if Claude searched but stopped before calling
+    # submit_claims, continue the conversation and force the structured output.
     claims = _claims_from_response(response)
-    if claims is not None:
-        return claims
-
-    # Fallback: Claude did web searches but didn't call submit_claims yet.
-    # Continue the conversation and force the structured output.
-    if response.stop_reason == "tool_use":
+    if claims is None and response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Utilise maintenant submit_claims pour structurer "
-                    "les claims identifiés."
-                ),
-            }
-        )
+        messages.append({"role": "user", "content": _FORCE_SUBMIT_MSG})
         response2 = await _client.messages.create(
             model=settings.ANTHROPIC_MODEL,
             max_tokens=1024,
@@ -252,80 +310,30 @@ async def extract_and_verify(
             tools=[WEB_SEARCH_TOOL, CLAIM_TOOL],
             tool_choice={"type": "tool", "name": "submit_claims"},
         )
+        api_calls += 1
         _log_usage("extract-fallback", response2.usage)
+        _add_usage(usage_total, response2.usage)
+        web_search_calls += _count_web_search(response2)
         claims = _claims_from_response(response2)
-        if claims is not None:
-            return claims
 
-    return []
-
-
-async def debug_extract(text: str, web_search: bool = True) -> dict[str, Any]:
-    """Like extract_and_verify but also returns token usage and turn count."""
-
-    def result(
-        claims: list[dict[str, Any]],
-        turns: int,
-        usage: dict[str, int],
-        web_search_called: bool,
-    ) -> dict[str, Any]:
-        return {
-            "claims": claims,
-            "turns": turns,
-            "usage": usage,
-            "model": settings.ANTHROPIC_MODEL,
-            "web_search_enabled": web_search,
-            "web_search_called": web_search_called,
-        }
-
-    if len(text.split()) < MIN_WORDS:
-        return result([], 0, {}, False)
-
-    messages: list[MessageParam] = [
-        {"role": "user", "content": f"Analyse ce texte :\n\n{text}"}
-    ]
-
-    response = await _client.messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-        tools=_build_tools(web_search),
-        tool_choice={"type": "auto"},
+    return ExtractResult(
+        claims=claims or [],
+        usage=usage_total,
+        api_calls=api_calls,
+        web_search_calls=web_search_calls,
     )
-    _log_usage("debug-extract", response.usage)
 
-    web_search_called = _web_search_called(response)
-    total_usage = _usage_dict(response.usage)
 
-    claims = _claims_from_response(response)
-    if claims is not None:
-        return result(claims, 1, total_usage, web_search_called)
-
-    if response.stop_reason == "tool_use":
-        messages.append({"role": "assistant", "content": response.content})
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "Utilise maintenant submit_claims pour structurer "
-                    "les claims identifiés."
-                ),
-            }
-        )
-        response2 = await _client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-            tools=[WEB_SEARCH_TOOL, CLAIM_TOOL],
-            tool_choice={"type": "tool", "name": "submit_claims"},
-        )
-        _log_usage("debug-extract-fallback", response2.usage)
-        for key, value in _usage_dict(response2.usage).items():
-            total_usage[key] += value
-        claims = _claims_from_response(response2)
-        if claims is not None:
-            return result(claims, 2, total_usage, web_search_called)
-
-    return result([], 1, total_usage, web_search_called)
+async def debug_extract(
+    text: str, context: list[str] | None = None, web_search: bool = True
+) -> dict[str, Any]:
+    """Shape ``extract_and_verify`` for the admin model-test panel."""
+    result = await extract_and_verify(text, context=context, web_search=web_search)
+    return {
+        "claims": result.claims,
+        "turns": result.api_calls,
+        "usage": result.usage,
+        "model": settings.ANTHROPIC_MODEL,
+        "web_search_enabled": web_search,
+        "web_search_called": result.web_search_calls > 0,
+    }

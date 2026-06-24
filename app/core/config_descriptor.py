@@ -64,7 +64,27 @@ BLOCKS: tuple[ConfigBlock, ...] = (
         id="audio",
         title="Audio",
         fields=(
-            ConfigField("MAX_AUDIO_BYTES", "Taille max d'un blob (octets)", "editable"),
+            ConfigField(
+                "MAX_AUDIO_BYTES", "Taille max d'une frame (octets)", "editable"
+            ),
+        ),
+    ),
+    ConfigBlock(
+        id="vad",
+        title="Découpage VAD (live)",
+        fields=(
+            ConfigField(
+                "VAD_THRESHOLD", "Seuil de détection de parole (0-1)", "editable"
+            ),
+            ConfigField(
+                "VAD_SILENCE_FLUSH_MS", "Silence de fin d'énoncé (ms)", "editable"
+            ),
+            ConfigField(
+                "VAD_MAX_SEGMENT_MS", "Longueur max d'un énoncé (ms)", "editable"
+            ),
+            ConfigField(
+                "VAD_MIN_SEGMENT_MS", "Longueur min d'un énoncé (ms)", "editable"
+            ),
         ),
     ),
     ConfigBlock(
@@ -86,6 +106,27 @@ BLOCKS: tuple[ConfigBlock, ...] = (
         id="cors",
         title="CORS",
         fields=(ConfigField("ALLOWED_ORIGINS", "Origines autorisées", "readonly"),),
+    ),
+    ConfigBlock(
+        id="extraction",
+        title="Extraction & vérification",
+        fields=(
+            ConfigField(
+                "CONTEXT_TURNS",
+                "Fenêtre de contexte (énoncés précédents)",
+                "editable",
+            ),
+        ),
+    ),
+    ConfigBlock(
+        id="persistence",
+        title="Persistance des sessions",
+        # Read-only: both take effect at startup (the DB engine is built once), so
+        # a runtime change wouldn't apply to the live process.
+        fields=(
+            ConfigField("PERSIST_SESSIONS", "Persistance activée", "readonly"),
+            ConfigField("DATABASE_URL", "URL base de données", "readonly"),
+        ),
     ),
     ConfigBlock(
         id="logs",

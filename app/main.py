@@ -9,15 +9,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import admin, auth, fact_check, health, ws
+from app.api.routers import admin, auth, fact_check, health, sessions, ws
 from app.config import settings
 from app.core.observability import setup_logging
+from app.db.session import init_db
 from app.services.transcription import preload_model
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     setup_logging()
+    init_db()
     preload_model()
     yield
 
@@ -36,4 +38,5 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(fact_check.router)
 app.include_router(admin.router)
+app.include_router(sessions.router)
 app.include_router(ws.router)

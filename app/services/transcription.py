@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 from faster_whisper import WhisperModel
 
 from app.config import settings
@@ -67,7 +68,11 @@ def is_model_loaded() -> bool:
 
 
 def transcribe_with_detail(audio: bytes) -> dict:
-    """Like transcribe_chunk but returns segments, language info and timing."""
+    """Transcribe encoded audio bytes (ffmpeg-decoded), returning segments + timing.
+
+    Used by the /admin upload probe, which accepts arbitrary files — so unlike the
+    live ``transcribe_samples`` path it still decodes via ffmpeg.
+    """
     model = _get_model()
     source = io.BytesIO(audio)
     t0 = time.time()
@@ -101,11 +106,12 @@ def transcribe_with_detail(audio: bytes) -> dict:
         return {"error": str(e), "text": "", "segments": []}
 
 
-def transcribe_chunk(audio: bytes) -> tuple[str, str, float]:
-    """Transcribe a self-contained audio chunk into plain text.
+def transcribe_samples(audio: np.ndarray) -> tuple[str, str, float]:
+    """Transcribe an endpointed utterance (float32 PCM @ 16 kHz) into plain text.
 
-    Accepts raw encoded audio bytes (e.g. a complete WebM/Opus blob,
-    decoded via ffmpeg). Synchronous and CPU-bound — call it from a thread pool.
+    Accepts the decoded waveform directly — the live /ws path streams raw PCM and
+    cuts utterances server-side (see services.audio_endpointer), so no ffmpeg decode
+    is needed here. Synchronous and CPU-bound — call it from a thread pool.
 
     Always auto-detects the language: forcing a non-matching language makes
     Whisper translate/hallucinate into that language rather than transcribe
@@ -117,7 +123,7 @@ def transcribe_chunk(audio: bytes) -> tuple[str, str, float]:
     """
     try:
         segments, info = _get_model().transcribe(
-            io.BytesIO(audio),
+            audio,
             language=None,
             vad_filter=True,
         )
