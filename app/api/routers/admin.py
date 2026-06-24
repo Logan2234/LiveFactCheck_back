@@ -58,6 +58,8 @@ def _value_type(value: object) -> ValueType:
         return "bool"
     if isinstance(value, int):
         return "int"
+    if isinstance(value, float):
+        return "float"
     if isinstance(value, list):
         return "list"
     return "str"

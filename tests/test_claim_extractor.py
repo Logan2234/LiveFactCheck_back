@@ -5,7 +5,7 @@ into clean claim dicts) without any network call. The Anthropic round-trip in
 ``extract_and_verify`` is left for a later integration test with a mocked client.
 """
 
-from app.services.claim_extractor import _parse_claims
+from app.services.claim_extractor import _build_analysis_prompt, _parse_claims
 
 
 def test_keeps_valid_claim_and_normalises_fields() -> None:
@@ -71,3 +71,26 @@ def test_web_search_used_is_strict_boolean() -> None:
         [{"text": "a", "status": "verified", "web_search_used": "yes"}]
     )
     assert truthy["web_search_used"] is False
+
+
+def test_prompt_without_context_is_the_bare_text() -> None:
+    prompt = _build_analysis_prompt("Il en est de même de 1*2", None)
+    assert "Il en est de même de 1*2" in prompt
+    assert "Contexte précédent" not in prompt
+
+
+def test_prompt_with_context_includes_preceding_utterances() -> None:
+    # Regression: without the preceding "1 + 1 = 2", the model can't resolve the
+    # back-reference and drops the second utterance as unverifiable.
+    prompt = _build_analysis_prompt(
+        "Il en est de même de 1*2", ["1 + 1 = 2.", "Voici un exemple."]
+    )
+    assert "1 + 1 = 2." in prompt
+    assert "Voici un exemple." in prompt
+    assert "Il en est de même de 1*2" in prompt
+    # The guard that stops the model from re-extracting claims from the context.
+    assert "AUCUN claim" in prompt
+
+
+def test_empty_context_list_is_treated_as_no_context() -> None:
+    assert _build_analysis_prompt("x", []) == _build_analysis_prompt("x", None)

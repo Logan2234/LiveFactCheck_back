@@ -18,9 +18,9 @@ router = APIRouter(tags=["fact-check"])
 async def fact_check(
     req: FactCheckRequest, _admin: str = Depends(require_admin)
 ) -> FactCheckResponse:
-    results = await extract_and_verify(req.text, web_search=req.web_search)
+    result = await extract_and_verify(req.text, web_search=req.web_search)
     # Service dicts carry every Claim field except id/timestamp; the response
     # model fills those with defaults. This route is diagnostic, not the live
     # WS path, so stable ids/timestamps aren't needed here.
-    claims = [Claim(id="", **r) for r in results]
+    claims = [Claim(id="", **r) for r in result.claims]
     return FactCheckResponse(text=req.text, claims=claims)

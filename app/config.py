@@ -20,10 +20,24 @@ class Settings(BaseSettings):
     WHISPER_MODEL: str = "medium"
     WHISPER_DEVICE: Literal["cpu", "cuda"] = "cpu"
 
-    # Upper bound on a single received audio blob (bytes), on /ws chunks and the
-    # /admin/whisper/transcribe upload. ~5 s of WebM/Opus is well under this; the
-    # cap guards against a malformed/oversized blob saturating memory. Default 10 MiB.
+    # Upper bound on a single received audio frame (bytes), on /ws frames and the
+    # /admin/whisper/transcribe upload. A /ws PCM frame (~250 ms of 16 kHz mono
+    # Int16) is a few KiB; the cap guards against a malformed/oversized blob
+    # saturating memory. Default 10 MiB.
     MAX_AUDIO_BYTES: int = 10 * 1024 * 1024
+
+    # Voice-activity endpointing for the live /ws stream. The client streams raw
+    # PCM continuously; the server cuts it into utterances on natural pauses
+    # (Silero VAD) instead of fixed client-side chunks. See services/audio_endpointer.
+    # VAD_THRESHOLD: Silero speech probability above which a frame counts as speech.
+    VAD_THRESHOLD: float = 0.5
+    # Trailing silence (ms) that closes an utterance and flushes it for transcription.
+    VAD_SILENCE_FLUSH_MS: int = 700
+    # Force-flush an utterance once it reaches this length, even without a pause
+    # (keeps a long monologue from delaying feedback indefinitely).
+    VAD_MAX_SEGMENT_MS: int = 12000
+    # Drop a flushed utterance shorter than this (filters out blips/noise).
+    VAD_MIN_SEGMENT_MS: int = 400
 
     LOG_LEVEL: str = "INFO"
 
@@ -42,6 +56,18 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
 
     AUTO_START_WHISPER: bool = True
+
+    # How many preceding utterances are handed to claim extraction as read-only
+    # context so a sentence that only makes sense after the previous one
+    # ("Il en est de même de…") can be resolved instead of dropped as unverifiable.
+    CONTEXT_TURNS: int = 4
+
+    # Session persistence. PERSIST_SESSIONS gates *writing* sessions, transcripts
+    # and verified claims to the DB; the live WS path is unaffected when off. The
+    # tables are always created at startup so the /sessions read routes work
+    # regardless. DATABASE_URL is any SQLAlchemy URL (default: a local SQLite file).
+    PERSIST_SESSIONS: bool = True
+    DATABASE_URL: str = "sqlite:///./livefactchecker.db"
 
     @field_validator("ANTHROPIC_API_KEY")
     @classmethod

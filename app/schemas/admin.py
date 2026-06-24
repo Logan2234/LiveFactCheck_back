@@ -34,7 +34,7 @@ class PromptResponse(BaseModel):
 
 
 FieldKind = Literal["readonly", "editable", "secret_status"]
-ValueType = Literal["str", "int", "bool", "list"]
+ValueType = Literal["str", "int", "float", "bool", "list"]
 
 
 class ConfigFieldValue(BaseModel):
