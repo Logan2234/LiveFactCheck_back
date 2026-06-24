@@ -35,6 +35,7 @@ from app.schemas.admin import (
 from app.schemas.fact_check import ModelTestRequest, ModelTestResponse
 from app.services.claim_extractor import (
     CLAIM_TOOL,
+    MAX_TOKENS,
     MIN_WORDS,
     SYSTEM_PROMPT,
     VALID_STATUSES,
@@ -42,6 +43,7 @@ from app.services.claim_extractor import (
     debug_extract,
 )
 from app.services.session import get_sessions_status
+from app.services.stats import estimate_cost
 from app.services.transcription import is_model_loaded, transcribe_with_detail
 
 router = APIRouter(
@@ -109,8 +111,9 @@ async def admin_prompt() -> PromptResponse:
         system_prompt=SYSTEM_PROMPT,
         claim_tool=dict(CLAIM_TOOL),
         web_search_tool=dict(WEB_SEARCH_TOOL),
-        valid_statuses=list(VALID_STATUSES),
+        valid_statuses=sorted(VALID_STATUSES),
         min_words=MIN_WORDS,
+        max_tokens=MAX_TOKENS,
         model=settings.ANTHROPIC_MODEL,
     )
 
@@ -193,4 +196,12 @@ async def admin_whisper_transcribe(file: UploadFile = File(...)) -> dict:
 @router.post("/model-test", response_model=ModelTestResponse)
 async def admin_model_test(req: ModelTestRequest) -> ModelTestResponse:
     result = await debug_extract(req.text, web_search=req.web_search)
-    return ModelTestResponse(**result)
+    usage = result["usage"]
+    cost = estimate_cost(
+        result["model"],
+        input_tokens=usage.get("input_tokens", 0),
+        output_tokens=usage.get("output_tokens", 0),
+        cache_write=usage.get("cache_write", 0),
+        cache_read=usage.get("cache_read", 0),
+    )
+    return ModelTestResponse(**result, estimated_cost_usd=cost)

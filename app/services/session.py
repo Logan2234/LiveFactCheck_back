@@ -10,7 +10,7 @@ import json
 import logging
 import time
 import uuid
-from collections import deque
+from collections import OrderedDict, deque
 
 import numpy as np
 from fastapi import WebSocket
@@ -29,9 +29,15 @@ from app.schemas.claim import (
 from app.services import session_store
 from app.services.audio_endpointer import Endpointer, silero_vad
 from app.services.claim_extractor import MIN_WORDS, extract_and_verify
+from app.services.normalize import normalize
 from app.services.transcription import transcribe_samples
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on a session's seen-claim registry, so a long session can't grow it
+# without limit. Oldest entries are evicted; a repeated claim further back than
+# this could re-appear once, which is acceptable.
+SEEN_CLAIMS_MAX = 200
 
 # Live registry of currently-open WebSocket connections, keyed by session id.
 # This is runtime state, NOT a cache of the DB: each value holds live Python
@@ -114,6 +120,26 @@ def _make_claim(result: dict, claim_id: str, timestamp: int) -> Claim:
     )
 
 
+def _dedupe_claims(claims: list[dict], seen: "OrderedDict[str, None]") -> list[dict]:
+    """Drop claims whose normalized text was already emitted in this session.
+
+    Mutates ``seen`` (adds each kept claim's key, evicting oldest past the bound).
+    Pure and synchronous on purpose: the concurrent claim tasks share one session
+    registry, and running this without an await in between keeps the check-and-add
+    atomic against the event loop, so they don't race.
+    """
+    kept: list[dict] = []
+    for claim in claims:
+        key = normalize(claim["text"])
+        if key in seen:
+            continue
+        seen[key] = None
+        kept.append(claim)
+    while len(seen) > SEEN_CLAIMS_MAX:
+        seen.popitem(last=False)
+    return kept
+
+
 async def _process_claims(
     ws: WebSocket,
     transcript: str,
@@ -121,11 +147,13 @@ async def _process_claims(
     web_search: bool,
     session_id: str,
     segment_id: str,
+    seen_claims: "OrderedDict[str, None]",
 ):
     """Show a pending claim, then replace/remove it with the verified results.
 
     Also records the verification measurements on the segment and persists each
-    final claim (never the transient pending placeholder).
+    final claim (never the transient pending placeholder). Claims already emitted
+    in this session are dropped, so a fact repeated across utterances shows once.
     """
     try:
         pending_id = str(uuid.uuid4())
@@ -152,11 +180,15 @@ async def _process_claims(
             web_search_calls=result.web_search_calls,
         )
 
-        if not result.claims:
+        # Drop claims already shown this session (a fact repeated across utterances
+        # shouldn't spawn a second card). All-duplicate is handled like no-claims:
+        # the pending placeholder is removed.
+        new_claims = _dedupe_claims(result.claims, seen_claims)
+        if not new_claims:
             await ws.send_json({"type": "remove_claim", "id": pending_id})
             return
 
-        first, *rest = result.claims
+        first, *rest = new_claims
         first_claim = _make_claim(first, pending_id, pending_ts).model_dump()
         await ws.send_json({"type": "claim", "claim": first_claim})
         await _persist(session_store.add_claim, first_claim, session_id, segment_id)
@@ -188,7 +220,13 @@ def _spawn_claims(
     web_search = session_info["verification_level"] == VerificationLevel.THOROUGH
     task = asyncio.create_task(
         _process_claims(
-            ws, transcript, context, web_search, session_info["id"], segment_id
+            ws,
+            transcript,
+            context,
+            web_search,
+            session_info["id"],
+            segment_id,
+            session_info["seen_claims"],
         )
     )
     background_tasks.add(task)
@@ -314,6 +352,21 @@ async def run_session(ws: WebSocket):
     and fed to claim extraction.
     """
     global _total_sessions
+    # Public-beta guardrail: refuse a new connection once we're at capacity, before
+    # the handshake — a rejected client costs no session_info, no endpointer and no
+    # Whisper work. (Tiny race: two connections can both pass this check across the
+    # accept await below; acceptable for a beta — at worst a couple over the cap.)
+    if (
+        settings.MAX_CONCURRENT_SESSIONS
+        and len(_active_sessions) >= settings.MAX_CONCURRENT_SESSIONS
+    ):
+        await ws.close(code=1013, reason="server at capacity")  # 1013 = Try Again Later
+        logger.warning(
+            "Refused WS connection: at capacity (%d active)",
+            settings.MAX_CONCURRENT_SESSIONS,
+        )
+        return
+
     await ws.accept()
     loop = asyncio.get_event_loop()
     background_tasks: set[asyncio.Task] = set()
@@ -344,6 +397,9 @@ async def run_session(ws: WebSocket):
         "last_activity": time.time(),
         # Monotonic sequence number for persisted transcript segments.
         "seq": 0,
+        # Normalized texts of claims already emitted this session, so a fact
+        # repeated across utterances shows a single card. Bounded LRU registry.
+        "seen_claims": OrderedDict(),
         # The session row is created lazily on the first transcript (see
         # _ensure_persisted), so an empty connection leaves no row. started_at is
         # captured now so the row reflects the real connect time, not first speech.
@@ -353,9 +409,28 @@ async def run_session(ws: WebSocket):
     _active_sessions[session_id] = session_info
     logger.info("WS session %s opened from %s", session_id[:8], client_host)
 
+    # Absolute deadline for the public-beta duration cap (None = no limit). We only
+    # enforce it around ws.receive(): a busy client streaming PCM non-stop is cut by
+    # the elapsed-time check, an idle one by bounding the receive() wait. An in-flight
+    # transcription/verification is never interrupted — only the next frame is refused.
+    max_duration = settings.MAX_SESSION_DURATION_SECONDS
+    deadline = loop.time() + max_duration if max_duration else None
+
     try:
         while True:
-            message = await ws.receive()
+            if deadline is not None and loop.time() >= deadline:
+                await ws.close(code=4000, reason="session time limit")
+                break
+            if deadline is not None:
+                try:
+                    message = await asyncio.wait_for(
+                        ws.receive(), timeout=deadline - loop.time()
+                    )
+                except TimeoutError:
+                    await ws.close(code=4000, reason="session time limit")
+                    break
+            else:
+                message = await ws.receive()
             if message.get("type") == "websocket.disconnect":
                 break
 

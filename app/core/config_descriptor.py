@@ -116,6 +116,29 @@ BLOCKS: tuple[ConfigBlock, ...] = (
                 "Fenêtre de contexte (énoncés précédents)",
                 "editable",
             ),
+            ConfigField(
+                "VERIFICATION_CACHE_SIZE",
+                "Taille du cache de vérification (0 = désactivé)",
+                "editable",
+            ),
+        ),
+    ),
+    ConfigBlock(
+        id="limits",
+        title="Limites session (live /ws)",
+        # Editable: read at connection time, so a change throttles new sessions live
+        # (0 = disabled). Lets the admin raise/lower the caps during a public beta.
+        fields=(
+            ConfigField(
+                "MAX_CONCURRENT_SESSIONS",
+                "Sessions simultanées max (0 = illimité)",
+                "editable",
+            ),
+            ConfigField(
+                "MAX_SESSION_DURATION_SECONDS",
+                "Durée max d'une session (s, 0 = illimité)",
+                "editable",
+            ),
         ),
     ),
     ConfigBlock(

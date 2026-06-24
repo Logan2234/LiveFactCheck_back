@@ -34,3 +34,5 @@ class ModelTestResponse(BaseModel):
     model: str
     web_search_enabled: bool
     web_search_called: bool
+    # Estimated USD cost of the call; None when the model isn't in the pricing map.
+    estimated_cost_usd: float | None = None

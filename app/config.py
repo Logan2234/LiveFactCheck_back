@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     # Drop a flushed utterance shorter than this (filters out blips/noise).
     VAD_MIN_SEGMENT_MS: int = 400
 
+    # Public-beta guardrails on the live /ws stream. Both default to 0 (disabled)
+    # so local dev stays unbounded; set them in prod to cap cost and load. Read at
+    # connection time, so an /admin/config change applies to subsequent sessions.
+    # MAX_CONCURRENT_SESSIONS: refuse a new /ws connection (WS close 1013) once this
+    # many are already open. Guards the Whisper CPU (each session transcribes
+    # continuously) as much as the Anthropic budget.
+    MAX_CONCURRENT_SESSIONS: int = 0
+    # MAX_SESSION_DURATION_SECONDS: force-close a /ws connection (WS close 4000)
+    # after this long, bounding the cost of a live left open/abandoned.
+    MAX_SESSION_DURATION_SECONDS: int = 0
+
     LOG_LEVEL: str = "INFO"
 
     # CORS: origines autorisées pour le front (format JSON dans .env, ex.
@@ -61,6 +72,12 @@ class Settings(BaseSettings):
     # context so a sentence that only makes sense after the previous one
     # ("Il en est de même de…") can be resolved instead of dropped as unverifiable.
     CONTEXT_TURNS: int = 4
+
+    # Process-level LRU cache of verification results, keyed by normalized utterance
+    # text. Lets a repeated utterance reuse its result instead of repaying an
+    # Anthropic call. Max entries; 0 = disabled. Only results that used no web_search
+    # are cached (internal-knowledge facts are immutable; web-sourced ones go stale).
+    VERIFICATION_CACHE_SIZE: int = 0
 
     # Session persistence. PERSIST_SESSIONS gates *writing* sessions, transcripts
     # and verified claims to the DB; the live WS path is unaffected when off. The

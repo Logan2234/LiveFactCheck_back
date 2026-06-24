@@ -33,17 +33,35 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
-def _estimate_cost(model: str, tokens: TokenTotals) -> float | None:
+def estimate_cost(
+    model: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cache_write: int,
+    cache_read: int,
+) -> float | None:
+    """USD cost of a call from raw token counts, or None for an unpriced model."""
     rates = PRICING.get(model)
     if rates is None:
         return None
     cost = (
-        tokens.input * rates["input"]
-        + tokens.output * rates["output"]
-        + tokens.cache_write * rates["cache_write"]
-        + tokens.cache_read * rates["cache_read"]
+        input_tokens * rates["input"]
+        + output_tokens * rates["output"]
+        + cache_write * rates["cache_write"]
+        + cache_read * rates["cache_read"]
     ) / 1_000_000
     return round(cost, 6)
+
+
+def _estimate_cost(model: str, tokens: TokenTotals) -> float | None:
+    return estimate_cost(
+        model,
+        input_tokens=tokens.input,
+        output_tokens=tokens.output,
+        cache_write=tokens.cache_write,
+        cache_read=tokens.cache_read,
+    )
 
 
 def compute_stats(session: Session, model: str) -> SessionStats:

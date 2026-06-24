@@ -1,4 +1,5 @@
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -6,6 +7,8 @@ import anthropic
 from anthropic.types import (
     Message,
     MessageParam,
+    TextBlockParam,
+    ToolChoiceParam,
     ToolParam,
     ToolUnionParam,
     Usage,
@@ -13,13 +16,46 @@ from anthropic.types import (
 )
 
 from app.config import settings
+from app.services.normalize import normalize
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 _client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 MIN_WORDS = 3
-VALID_STATUSES = {"verified", "false", "uncertain", "unverifiable"}
+VALID_STATUSES: set[str] = {"verified", "false", "uncertain", "unverifiable"}
+
+# Output cap per extraction call. Headroom for several claims with explanations and
+# counter_claims; a hit on it (stop_reason "max_tokens") truncates the tool JSON and
+# is logged.
+MAX_TOKENS = 2048
+
+# Process-level LRU cache of verification results, keyed by the normalized
+# utterance text. Bounded by settings.VERIFICATION_CACHE_SIZE (0 = disabled).
+# Shared across sessions, so a repeated utterance reuses its result regardless of
+# which connection produced it first. Only no-web_search results are stored (see
+# extract_and_verify) so we never serve a stale web-sourced fact.
+_verification_cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+
+
+def _cache_get(key: str) -> list[dict[str, Any]] | None:
+    if settings.VERIFICATION_CACHE_SIZE <= 0:
+        return None
+    claims: list[dict[str, Any]] | None = _verification_cache.get(key)
+    if claims is None:
+        return None
+    _verification_cache.move_to_end(key)  # mark as most-recently used
+    return claims
+
+
+def _cache_put(key: str, claims: list[dict[str, Any]]) -> None:
+    size: int = settings.VERIFICATION_CACHE_SIZE
+    if size <= 0:
+        return
+    _verification_cache[key] = claims
+    _verification_cache.move_to_end(key)
+    while len(_verification_cache) > size:
+        _verification_cache.popitem(last=False)  # evict least-recently used
 
 
 @dataclass
@@ -58,7 +94,6 @@ WEB_SEARCH_TOOL: WebSearchTool20250305Param = {
 CLAIM_TOOL: ToolParam = {
     "name": "submit_claims",
     "description": "Soumet les affirmations factuelles extraites et vérifiées.",
-    "cache_control": {"type": "ephemeral"},
     "input_schema": {
         "type": "object",
         "properties": {
@@ -70,7 +105,10 @@ CLAIM_TOOL: ToolParam = {
                         "text": {"type": "string"},
                         "status": {
                             "type": "string",
-                            "enum": list(VALID_STATUSES),
+                            # Sorted, not list(set): a set's iteration order varies
+                            # between processes (hash randomization), which would make
+                            # the tool schema non-deterministic and defeat caching.
+                            "enum": sorted(VALID_STATUSES),
                         },
                         "explanation": {"type": "string"},
                         "sources": {
@@ -161,6 +199,10 @@ SYSTEM_PROMPT = (
     "→ text = « 1 * 2 = 2 » (verified). "
     "Ex. négatif : contexte « 1 + 1 = 2 », texte « Ce n'est pas le cas pour 4+4 » "
     "→ text = « 4 + 4 != 2 » (verified, car le locuteur a raison). "
+    "Ex. faux : texte « Napoléon a gagné à Waterloo » → text = « Napoléon a gagné "
+    "la bataille de Waterloo » (status false, counter_claim « Napoléon a perdu la "
+    "bataille de Waterloo en 1815 »). Le locuteur peut se tromper : ton rôle est de "
+    "vérifier son affirmation, jamais de lui donner raison par défaut.\n"
     "Ne jamais extraire le fait sous-jacent nié comme si le locuteur l'affirmait.\n"
     "\n"
     "Vérification — par défaut, vérifie avec tes connaissances internes SANS "
@@ -171,11 +213,30 @@ SYSTEM_PROMPT = (
     "N'utilise JAMAIS web_search pour des faits établis et immuables (dates "
     "historiques, mesures physiques, géographie, faits scientifiques connus) : "
     "tu les connais déjà.\n"
+    "Fiabilité des sources — une source web unique ne prouve rien. Recoupe "
+    "plusieurs sources indépendantes et reconnues avant de classer « verified », "
+    "et juge l'autorité de la source : un domaine inconnu, militant ou "
+    "promotionnel n'est pas une preuve. Si une recherche contredit ce que tu sais "
+    "de façon fiable, c'est presque toujours la source qui a tort : ne renie pas "
+    "une connaissance solide pour un résultat web douteux — classe « false » "
+    "d'après ta connaissance, ou « uncertain » si un doute subsiste, plutôt que de "
+    "confirmer une source peu fiable.\n"
     'Quand tu as effectué une recherche, mets les URLs dans "sources".\n'
     "\n"
     'Remplis confidence (0-10) et, pour un claim "false", counter_claim. '
+    "Réserve 8-10 aux faits solidement établis ; plafonne à 5 ou moins quand tu "
+    "t'appuies sur une source web unique ou de faible autorité.\n"
     "Termine par submit_claims."
 )
+
+# Cache breakpoint on the system block, so tools + system are cached together
+# (render order is tools → system → messages — a breakpoint on the tool would cache
+# only the tools, not this larger prompt). Below the model's minimum cacheable prefix
+# (Haiku 4.5: 4096 tokens) it's a silent no-op; check cache_read/cache_write in the
+# _log_usage output to confirm whether it engages.
+_SYSTEM: list[TextBlockParam] = [
+    {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+]
 
 
 def _build_analysis_prompt(text: str, context: list[str] | None) -> str:
@@ -187,7 +248,7 @@ def _build_analysis_prompt(text: str, context: list[str] | None) -> str:
     """
     if not context:
         return f"Analyse ce texte :\n\n{text}"
-    preceding = "\n".join(context)
+    preceding: str = "\n".join(context)
     return (
         "Contexte précédent (pour comprendre les références ; "
         "n'en extrais AUCUN claim) :\n\n"
@@ -223,7 +284,7 @@ def _claims_from_response(response: Message) -> list[dict[str, Any]] | None:
     """
     for block in response.content:
         if block.type == "tool_use" and block.name == "submit_claims":
-            tool_input = cast(dict[str, Any], block.input)
+            tool_input: dict[str, Any] = cast(dict[str, Any], block.input)
             return _parse_claims(tool_input.get("claims", []))
     return None
 
@@ -275,6 +336,14 @@ async def extract_and_verify(
     if len(text.split()) < MIN_WORDS:
         return ExtractResult(claims=[])
 
+    # A cache hit short-circuits the API call entirely: usage/api_calls stay at 0,
+    # which the persistence layer correctly records as "no call for this segment".
+    cache_key: str = normalize(text)
+    cached: list[dict[str, Any]] | None = _cache_get(cache_key)
+    if cached is not None:
+        logger.info("Verification cache hit")
+        return ExtractResult(claims=cached)
+
     messages: list[MessageParam] = [
         {"role": "user", "content": _build_analysis_prompt(text, context)}
     ]
@@ -282,30 +351,41 @@ async def extract_and_verify(
     web_search_calls = 0
     api_calls = 0
 
-    response = await _client.messages.create(
+    # Fast path (no web_search) offers only submit_claims, so force it: one call,
+    # guaranteed structured output, no reliance on the two-turn fallback, and no silent
+    # drop if the model were to answer in plain text. Thorough keeps "auto" so the
+    # model can web_search first.
+    first_tool_choice: ToolChoiceParam = (
+        {"type": "auto"} if web_search else {"type": "tool", "name": "submit_claims"}
+    )
+    response: Message = await _client.messages.create(
         model=settings.ANTHROPIC_MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        max_tokens=MAX_TOKENS,
+        system=_SYSTEM,
         messages=messages,
         tools=_build_tools(web_search),
-        tool_choice={"type": "auto"},
+        tool_choice=first_tool_choice,
     )
     api_calls += 1
     _log_usage("extract", response.usage)
     _add_usage(usage_total, response.usage)
     web_search_calls += _count_web_search(response)
+    if response.stop_reason == "max_tokens":
+        logger.warning(
+            "Extraction hit max_tokens (%d); output may be truncated", MAX_TOKENS
+        )
 
     # Happy path: submit_claims present in the first response (with or without a
     # prior web_search). Otherwise, if Claude searched but stopped before calling
     # submit_claims, continue the conversation and force the structured output.
-    claims = _claims_from_response(response)
+    claims: list[dict[str, Any]] | None = _claims_from_response(response)
     if claims is None and response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": _FORCE_SUBMIT_MSG})
-        response2 = await _client.messages.create(
+        response2: Message = await _client.messages.create(
             model=settings.ANTHROPIC_MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
+            max_tokens=MAX_TOKENS,
+            system=_SYSTEM,
             messages=messages,
             tools=[WEB_SEARCH_TOOL, CLAIM_TOOL],
             tool_choice={"type": "tool", "name": "submit_claims"},
@@ -314,10 +394,22 @@ async def extract_and_verify(
         _log_usage("extract-fallback", response2.usage)
         _add_usage(usage_total, response2.usage)
         web_search_calls += _count_web_search(response2)
-        claims = _claims_from_response(response2)
+        if response2.stop_reason == "max_tokens":
+            logger.warning(
+                "Extraction fallback hit max_tokens (%d); output may be truncated",
+                MAX_TOKENS,
+            )
+        claims: list[dict[str, Any]] | None = _claims_from_response(response2)
+
+    final_claims: list[dict[str, Any]] = claims or []
+    # Cache only when no web_search was used: those facts are immutable, so reusing
+    # the result is safe; a web-sourced result could go stale. An empty result is
+    # worth caching too (e.g. a repeated pure opinion) — it spares the same call.
+    if web_search_calls == 0:
+        _cache_put(cache_key, final_claims)
 
     return ExtractResult(
-        claims=claims or [],
+        claims=final_claims,
         usage=usage_total,
         api_calls=api_calls,
         web_search_calls=web_search_calls,
@@ -328,7 +420,9 @@ async def debug_extract(
     text: str, context: list[str] | None = None, web_search: bool = True
 ) -> dict[str, Any]:
     """Shape ``extract_and_verify`` for the admin model-test panel."""
-    result = await extract_and_verify(text, context=context, web_search=web_search)
+    result: ExtractResult = await extract_and_verify(
+        text, context=context, web_search=web_search
+    )
     return {
         "claims": result.claims,
         "turns": result.api_calls,

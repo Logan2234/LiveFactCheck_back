@@ -30,6 +30,7 @@ class PromptResponse(BaseModel):
     web_search_tool: dict[str, Any]
     valid_statuses: list[str]
     min_words: int
+    max_tokens: int
     model: str
 
 
