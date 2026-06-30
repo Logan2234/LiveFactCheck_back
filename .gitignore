@@ -225,6 +225,27 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Virtualenv
+# https://realpython.com/python-virtual-environments-a-primer/#the-virtualenv-project
+.venv/
+venv/
+.python-version
+
+# pyenv: Simple Python Version Management
+pyvenv.cfg
+
+# pip: package installer for Python
+pip-selfcheck.json
+
+# Custom python interpreter
+.Python
+[Bb]in
+[Ii]nclude
+[Ll]ib
+[Ll]ib64
+[Ll]ocal
+[Ss]cripts
+
 # Visual Studio Code
 .vscode/*
 !.vscode/settings.json
@@ -261,23 +282,6 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
-
-*~
-
-# temporary files which can be created if a process still has a handle open of a deleted file
-.fuse_hidden*
-
-# Metadata left by Dolphin file manager, which comes with KDE Plasma
-.directory
-
-# Linux trash folder which might appear on any partition or disk
-.Trash-*
-
-# .nfs files are created when an open file is removed but is still being accessed
-.nfs*
-
-# Log files created by default by the nohup command
-nohup.out
 
 # General
 .DS_Store
@@ -338,3 +342,20 @@ Backups.backupdb
 .MobileBackups.trash
 MobileBackups.trash
 tmbootpicker.efi
+
+*~
+
+# temporary files which can be created if a process still has a handle open of a deleted file
+.fuse_hidden*
+
+# Metadata left by Dolphin file manager, which comes with KDE Plasma
+.directory
+
+# Linux trash folder which might appear on any partition or disk
+.Trash-*
+
+# .nfs files are created when an open file is removed but is still being accessed
+.nfs*
+
+# Log files created by default by the nohup command
+nohup.out
