@@ -15,7 +15,14 @@ from app.core.security import create_user_token
 from app.db.session import get_db
 from app.dependencies import require_user
 from app.schemas.auth import TokenResponse
-from app.schemas.user import SignupRequest, UserLoginRequest, UserOut
+from app.schemas.user import (
+    DeleteAccountRequest,
+    SignupRequest,
+    UpdateEmailRequest,
+    UpdatePasswordRequest,
+    UserLoginRequest,
+    UserOut,
+)
 from app.services import user_store
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -79,3 +86,54 @@ def me(
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     return UserOut.model_validate(user)
+
+
+def _reauth(db: DBSession, user_id: str, password: str):
+    """Load the signed-in user and re-confirm their password before a sensitive change.
+
+    A valid token proves the session; re-typing the password proves intent. A wrong
+    password is 403 (forbidden action), kept distinct from the 401 a bad/expired token
+    yields so the client doesn't treat it as a logged-out state.
+    """
+    user = user_store.get_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if not verify_password(user.password_hash, password):
+        raise HTTPException(status_code=403, detail="Mot de passe incorrect")
+    return user
+
+
+@router.patch("/me/email", response_model=UserOut)
+def update_email(
+    req: UpdateEmailRequest,
+    user_id: str = Depends(require_user),
+    db: DBSession = Depends(get_db),
+) -> UserOut:
+    _reauth(db, user_id, req.password)
+    existing = user_store.get_user_by_email(db, req.new_email)
+    if existing is not None and existing.id != user_id:
+        raise HTTPException(status_code=409, detail="Email déjà utilisé")
+    user = user_store.update_email(db, user_id, req.new_email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return UserOut.model_validate(user)
+
+
+@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def update_password(
+    req: UpdatePasswordRequest,
+    user_id: str = Depends(require_user),
+    db: DBSession = Depends(get_db),
+) -> None:
+    _reauth(db, user_id, req.current_password)
+    user_store.update_password(db, user_id, req.new_password)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    req: DeleteAccountRequest,
+    user_id: str = Depends(require_user),
+    db: DBSession = Depends(get_db),
+) -> None:
+    _reauth(db, user_id, req.password)
+    user_store.delete_user(db, user_id)

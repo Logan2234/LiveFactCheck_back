@@ -51,3 +51,31 @@ def touch_last_login(db: DBSession, user_id: str) -> None:
         return
     user.last_login_at = utcnow()
     db.commit()
+
+
+def update_email(db: DBSession, user_id: str, new_email: str) -> User | None:
+    user = db.get(User, user_id)
+    if user is None:
+        return None
+    user.email = new_email
+    user.updated_at = utcnow()
+    db.commit()
+    return user
+
+
+def update_password(db: DBSession, user_id: str, new_password: str) -> None:
+    user = db.get(User, user_id)
+    if user is None:
+        return
+    user.password_hash = hash_password(new_password)
+    user.updated_at = utcnow()
+    db.commit()
+
+
+def delete_user(db: DBSession, user_id: str) -> None:
+    user = db.get(User, user_id)
+    if user is None:
+        return
+    # Webhooks cascade via the relationship's delete-orphan rule.
+    db.delete(user)
+    db.commit()

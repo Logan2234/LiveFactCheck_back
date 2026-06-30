@@ -17,6 +17,21 @@ class UserLoginRequest(BaseModel):
     password: str
 
 
+class UpdateEmailRequest(BaseModel):
+    # The current password re-confirms identity before a sensitive change.
+    new_email: EmailStr
+    password: str
+
+
+class UpdatePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

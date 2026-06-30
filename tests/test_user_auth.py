@@ -113,6 +113,95 @@ def test_me_requires_a_token() -> None:
     assert client.get("/v1/users/me").status_code == 401
 
 
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_update_email_changes_email_and_keeps_login() -> None:
+    _signup()
+    token = _login().json()["token"]
+    resp = client.patch(
+        "/v1/users/me/email",
+        headers=_auth(token),
+        json={"new_email": "alice2@example.com", "password": "password123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "alice2@example.com"
+    # The new email is now a valid login identifier; the username still works too.
+    assert _login(identifier="alice2@example.com").status_code == 200
+
+
+def test_update_email_rejects_wrong_password() -> None:
+    _signup()
+    token = _login().json()["token"]
+    resp = client.patch(
+        "/v1/users/me/email",
+        headers=_auth(token),
+        json={"new_email": "alice2@example.com", "password": "wrong"},
+    )
+    assert resp.status_code == 403
+
+
+def test_update_email_rejects_email_taken_by_another_user() -> None:
+    _signup()
+    _signup(email="bob@example.com", username="bob")
+    token = _login().json()["token"]
+    resp = client.patch(
+        "/v1/users/me/email",
+        headers=_auth(token),
+        json={"new_email": "bob@example.com", "password": "password123"},
+    )
+    assert resp.status_code == 409
+
+
+def test_update_password_then_login_with_new_password() -> None:
+    _signup()
+    token = _login().json()["token"]
+    resp = client.patch(
+        "/v1/users/me/password",
+        headers=_auth(token),
+        json={"current_password": "password123", "new_password": "newpassword456"},
+    )
+    assert resp.status_code == 204
+    assert _login(password="password123").status_code == 401
+    assert _login(password="newpassword456").status_code == 200
+
+
+def test_update_password_rejects_wrong_current_password() -> None:
+    _signup()
+    token = _login().json()["token"]
+    resp = client.patch(
+        "/v1/users/me/password",
+        headers=_auth(token),
+        json={"current_password": "wrong", "new_password": "newpassword456"},
+    )
+    assert resp.status_code == 403
+
+
+def test_delete_account_removes_user() -> None:
+    _signup()
+    token = _login().json()["token"]
+    resp = client.request(
+        "DELETE",
+        "/v1/users/me",
+        headers=_auth(token),
+        json={"password": "password123"},
+    )
+    assert resp.status_code == 204
+    # The token's subject is gone: /me 404s and the credentials no longer log in.
+    assert client.get("/v1/users/me", headers=_auth(token)).status_code == 404
+    assert _login().status_code == 401
+
+
+def test_delete_account_rejects_wrong_password() -> None:
+    _signup()
+    token = _login().json()["token"]
+    resp = client.request(
+        "DELETE", "/v1/users/me", headers=_auth(token), json={"password": "wrong"}
+    )
+    assert resp.status_code == 403
+
+
 def _creds(token: str) -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
