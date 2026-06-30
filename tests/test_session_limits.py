@@ -38,7 +38,7 @@ def test_rejects_connection_at_capacity(monkeypatch) -> None:
 
     with (
         pytest.raises(WebSocketDisconnect) as exc_info,
-        client.websocket_connect("/ws"),
+        client.websocket_connect("/v1/ws"),
     ):
         pass
 
@@ -51,7 +51,7 @@ def test_accepts_connection_below_capacity(monkeypatch) -> None:
     monkeypatch.setattr(session, "_active_sessions", {"a": {}})
     monkeypatch.setattr(session, "_make_endpointer", lambda: _DummyEndpointer())
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("/v1/ws") as ws:
         # Accepted: the socket is open. Close from our side to end cleanly.
         ws.close()
 
@@ -62,7 +62,7 @@ def test_disabled_capacity_never_rejects(monkeypatch) -> None:
     monkeypatch.setattr(session, "_active_sessions", {"a": {}, "b": {}, "c": {}})
     monkeypatch.setattr(session, "_make_endpointer", lambda: _DummyEndpointer())
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("/v1/ws") as ws:
         ws.close()
 
 
@@ -72,7 +72,7 @@ def test_closes_session_after_duration_cap(monkeypatch) -> None:
     monkeypatch.setattr(session.settings, "MAX_SESSION_DURATION_SECONDS", 1)
     monkeypatch.setattr(session, "_make_endpointer", lambda: _DummyEndpointer())
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("/v1/ws") as ws:
         # Raw receive() surfaces the server's close frame as a message dict.
         message = ws.receive()
 

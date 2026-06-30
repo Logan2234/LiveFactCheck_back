@@ -21,7 +21,7 @@ def _clear_limiter() -> None:
 
 
 def test_correct_password_returns_token() -> None:
-    resp = client.post("/admin/login", json={"password": settings.ADMIN_PASSWORD})
+    resp = client.post("/v1/admin/login", json={"password": settings.ADMIN_PASSWORD})
 
     assert resp.status_code == 200
     assert resp.json()["token"]
@@ -29,29 +29,29 @@ def test_correct_password_returns_token() -> None:
 
 def test_repeated_failures_get_rate_limited() -> None:
     for _ in range(settings.LOGIN_RATE_LIMIT_ATTEMPTS):
-        resp = client.post("/admin/login", json={"password": "wrong"})
+        resp = client.post("/v1/admin/login", json={"password": "wrong"})
         assert resp.status_code == 401
 
-    blocked = client.post("/admin/login", json={"password": "wrong"})
+    blocked = client.post("/v1/admin/login", json={"password": "wrong"})
     assert blocked.status_code == 429
 
 
 def test_block_applies_even_to_correct_password() -> None:
     # Once blocked, the limiter short-circuits before the password is checked.
     for _ in range(settings.LOGIN_RATE_LIMIT_ATTEMPTS):
-        client.post("/admin/login", json={"password": "wrong"})
+        client.post("/v1/admin/login", json={"password": "wrong"})
 
-    resp = client.post("/admin/login", json={"password": settings.ADMIN_PASSWORD})
+    resp = client.post("/v1/admin/login", json={"password": settings.ADMIN_PASSWORD})
     assert resp.status_code == 429
 
 
 def test_success_resets_failure_counter() -> None:
     for _ in range(settings.LOGIN_RATE_LIMIT_ATTEMPTS - 1):
-        client.post("/admin/login", json={"password": "wrong"})
+        client.post("/v1/admin/login", json={"password": "wrong"})
 
-    ok = client.post("/admin/login", json={"password": settings.ADMIN_PASSWORD})
+    ok = client.post("/v1/admin/login", json={"password": settings.ADMIN_PASSWORD})
     assert ok.status_code == 200
 
     # Counter was reset, so a fresh batch of failures is allowed again.
-    resp = client.post("/admin/login", json={"password": "wrong"})
+    resp = client.post("/v1/admin/login", json={"password": "wrong"})
     assert resp.status_code == 401

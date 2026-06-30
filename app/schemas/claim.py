@@ -67,8 +67,11 @@ class ConfigMessage(BaseModel):
     against the supported set when applied (an unknown code falls back to auto).
     ``verification_level`` picks the speed/depth trade-off; it defaults to
     ``THOROUGH`` so an older client that omits it keeps the previous behaviour.
+    ``token`` is the optional user JWT: present → the session is bound to that user
+    and their webhooks fire on matching claims; absent → an anonymous session.
     """
 
     type: str = "config"
     language: str
     verification_level: VerificationLevel = VerificationLevel.THOROUGH
+    token: str | None = None

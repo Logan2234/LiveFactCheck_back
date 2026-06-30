@@ -12,6 +12,7 @@ import time
 import uuid
 from collections import OrderedDict, deque
 
+import jwt
 import numpy as np
 from fastapi import WebSocket
 from pydantic import ValidationError
@@ -20,13 +21,15 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
 from app.core.languages import normalize_language
+from app.core.security import decode_user_token
+from app.db.session import SessionLocal
 from app.schemas.claim import (
     Claim,
     ConfigMessage,
     VerificationLevel,
     VerificationStatus,
 )
-from app.services import session_store
+from app.services import session_store, webhook, webhook_store
 from app.services.audio_endpointer import Endpointer, silero_vad
 from app.services.claim_extractor import MIN_WORDS, extract_and_verify
 from app.services.normalize import normalize
@@ -65,6 +68,76 @@ async def _persist(fn, *args, **kwargs) -> None:
         await asyncio.to_thread(fn, *args, **kwargs)
     except SQLAlchemyError as e:
         logger.error("Persistence error in %s: %s", fn.__name__, e)
+
+
+def _load_webhooks_sync(user_id: str) -> list[dict]:
+    """Read a user's enabled webhooks into plain dicts, detached from the DB session.
+
+    Independent of PERSIST_SESSIONS (which only gates writing the live session rows):
+    the webhooks table is always available. Returns the fields delivery needs.
+    """
+    with SessionLocal() as db:
+        return [
+            {
+                "id": w.id,
+                "url": w.url,
+                "kind": w.kind,
+                "secret": w.secret,
+                "trigger_statuses": list(w.trigger_statuses),
+            }
+            for w in webhook_store.list_enabled_for_user(db, user_id)
+        ]
+
+
+async def _resolve_user_webhooks(token: str | None) -> tuple[str | None, list[dict]]:
+    """Authenticate the session user from the config token and snapshot their webhooks.
+
+    Returns ``(None, [])`` for an anonymous or invalid token — such a session fires no
+    webhook. The snapshot is taken once per config frame, so a webhook added mid-session
+    applies on the next reconnect (no DB hit per claim).
+    """
+    if not token:
+        return None, []
+    try:
+        user_id = decode_user_token(token)
+    except jwt.PyJWTError:
+        logger.info("WS config: ignoring invalid user token")
+        return None, []
+    try:
+        webhooks = await asyncio.to_thread(_load_webhooks_sync, user_id)
+    except SQLAlchemyError as e:
+        logger.error("Failed to load webhooks for user %s: %s", user_id, e)
+        return user_id, []
+    return user_id, webhooks
+
+
+def _record_delivery_sync(webhook_id: str, ok: bool, error: str | None) -> None:
+    with SessionLocal() as db:
+        webhook_store.record_delivery(db, webhook_id, ok, error)
+
+
+async def _deliver_webhooks(webhooks: list[dict], claim: dict, session_id: str) -> None:
+    """Deliver a freshly emitted claim to the user's matching webhooks, best-effort.
+
+    Runs after the claim is already sent to the client, so a slow endpoint never delays
+    the live UI. Each delivery and its health update are offloaded to a thread; failures
+    are contained in ``webhook.deliver`` (returns an error string, never raises).
+    """
+    if not webhooks:
+        return
+    status = claim["status"]
+    for wh in webhooks:
+        if status not in wh["trigger_statuses"]:
+            continue
+        error = await asyncio.to_thread(
+            webhook.deliver, wh["url"], wh["kind"], claim, session_id, wh["secret"]
+        )
+        try:
+            await asyncio.to_thread(
+                _record_delivery_sync, wh["id"], error is None, error
+            )
+        except SQLAlchemyError as e:
+            logger.error("Failed to record webhook delivery: %s", e)
 
 
 async def _ensure_persisted(session_info: dict) -> None:
@@ -148,6 +221,7 @@ async def _process_claims(
     session_id: str,
     segment_id: str,
     seen_claims: "OrderedDict[str, None]",
+    webhooks: list[dict],
 ):
     """Show a pending claim, then replace/remove it with the verified results.
 
@@ -192,12 +266,14 @@ async def _process_claims(
         first_claim = _make_claim(first, pending_id, pending_ts).model_dump()
         await ws.send_json({"type": "claim", "claim": first_claim})
         await _persist(session_store.add_claim, first_claim, session_id, segment_id)
+        await _deliver_webhooks(webhooks, first_claim, session_id)
         for extra in rest:
             claim = _make_claim(
                 extra, str(uuid.uuid4()), int(time.time() * 1000)
             ).model_dump()
             await ws.send_json({"type": "claim", "claim": claim})
             await _persist(session_store.add_claim, claim, session_id, segment_id)
+            await _deliver_webhooks(webhooks, claim, session_id)
 
     except Exception as e:
         logger.error("Claim processing error: %s", e)
@@ -227,6 +303,7 @@ def _spawn_claims(
             session_info["id"],
             segment_id,
             session_info["seen_claims"],
+            session_info["webhooks"],
         )
     )
     background_tasks.add(task)
@@ -395,6 +472,11 @@ async def run_session(ws: WebSocket):
         # until the client says otherwise, matching the prior default.
         "verification_level": VerificationLevel.THOROUGH,
         "last_activity": time.time(),
+        # Authenticated user id (None = anonymous) and a snapshot of their enabled
+        # webhooks, both resolved from the optional token in the config frame. The
+        # snapshot is what claim delivery reads; refreshed on each config frame.
+        "user_id": None,
+        "webhooks": [],
         # Monotonic sequence number for persisted transcript segments.
         "seq": 0,
         # Normalized texts of claims already emitted this session, so a fact
@@ -442,11 +524,17 @@ async def run_session(ws: WebSocket):
                     cfg = parse_config(config)
                     session_info["language"] = normalize_language(cfg.language)
                     session_info["verification_level"] = cfg.verification_level
+                    user_id, webhooks = await _resolve_user_webhooks(cfg.token)
+                    session_info["user_id"] = user_id
+                    session_info["webhooks"] = webhooks
                     logger.info(
-                        "WS session %s config: language=%s verification=%s",
+                        "WS session %s config: language=%s verification=%s "
+                        "user=%s webhooks=%d",
                         session_id[:8],
                         session_info["language"] or "auto",
                         session_info["verification_level"].value,
+                        user_id[:8] if user_id else "anon",
+                        len(webhooks),
                     )
                 except ValueError as e:
                     logger.warning("Ignoring config frame: %s", e)

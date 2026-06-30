@@ -99,13 +99,13 @@ def test_routes_require_admin() -> None:
     # Drop the auth override to confirm the routes are actually gated. The autouse
     # fixture re-adds it before the next test.
     app.dependency_overrides.pop(require_admin, None)
-    assert client.get("/sessions").status_code == 401
-    assert client.get("/sessions/sess-1").status_code == 401
-    assert client.get("/sessions/sess-1/export").status_code == 401
+    assert client.get("/v1/sessions").status_code == 401
+    assert client.get("/v1/sessions/sess-1").status_code == 401
+    assert client.get("/v1/sessions/sess-1/export").status_code == 401
 
 
 def test_list_sessions() -> None:
-    resp = client.get("/sessions")
+    resp = client.get("/v1/sessions")
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
@@ -116,7 +116,7 @@ def test_list_sessions() -> None:
 
 
 def test_get_session_detail() -> None:
-    resp = client.get("/sessions/sess-1")
+    resp = client.get("/v1/sessions/sess-1")
     assert resp.status_code == 200
     body = resp.json()
     assert body["stats"]["claims_count"] == 1
@@ -126,11 +126,11 @@ def test_get_session_detail() -> None:
 
 
 def test_get_unknown_session_is_404() -> None:
-    assert client.get("/sessions/nope").status_code == 404
+    assert client.get("/v1/sessions/nope").status_code == 404
 
 
 def test_export_markdown() -> None:
-    resp = client.get("/sessions/sess-1/export", params={"format": "md"})
+    resp = client.get("/v1/sessions/sess-1/export", params={"format": "md"})
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/markdown")
     assert "session-sess-1.md" in resp.headers["content-disposition"]
@@ -138,7 +138,7 @@ def test_export_markdown() -> None:
 
 
 def test_export_json_is_default() -> None:
-    resp = client.get("/sessions/sess-1/export")
+    resp = client.get("/v1/sessions/sess-1/export")
     assert resp.status_code == 200
     assert "session-sess-1.json" in resp.headers["content-disposition"]
     assert resp.json()["id"] == "sess-1"

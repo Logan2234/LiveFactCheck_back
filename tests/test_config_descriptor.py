@@ -34,14 +34,14 @@ def test_descriptor_covers_every_settings_field() -> None:
 
 
 def test_config_endpoint_returns_all_described_fields() -> None:
-    resp = client.get("/admin/config")
+    resp = client.get("/v1/admin/config")
     assert resp.status_code == 200
     returned = {f["key"] for b in resp.json()["blocks"] for f in b["fields"]}
     assert returned == DESCRIBED_KEYS
 
 
 def test_secrets_never_serialised() -> None:
-    resp = client.get("/admin/config")
+    resp = client.get("/v1/admin/config")
     body = resp.text
     fields = {f["key"]: f for b in resp.json()["blocks"] for f in b["fields"]}
     for key in SECRET_KEYS:
@@ -56,7 +56,7 @@ def test_patch_editable_int_coerces_string() -> None:
     original = settings.MAX_AUDIO_BYTES
     try:
         resp = client.patch(
-            "/admin/config", json={"updates": {"MAX_AUDIO_BYTES": "2048"}}
+            "/v1/admin/config", json={"updates": {"MAX_AUDIO_BYTES": "2048"}}
         )
         assert resp.status_code == 200
         assert settings.MAX_AUDIO_BYTES == 2048  # coerced str -> int by Pydantic
@@ -65,13 +65,17 @@ def test_patch_editable_int_coerces_string() -> None:
 
 
 def test_patch_rejects_non_editable_field() -> None:
-    resp = client.patch("/admin/config", json={"updates": {"WHISPER_MODEL": "large"}})
+    resp = client.patch(
+        "/v1/admin/config", json={"updates": {"WHISPER_MODEL": "large"}}
+    )
     assert resp.status_code == 422
     assert settings.WHISPER_MODEL != "large"
 
 
 def test_patch_rejects_value_outside_options() -> None:
-    resp = client.patch("/admin/config", json={"updates": {"ANTHROPIC_MODEL": "gpt-4"}})
+    resp = client.patch(
+        "/v1/admin/config", json={"updates": {"ANTHROPIC_MODEL": "gpt-4"}}
+    )
     assert resp.status_code == 422
     assert settings.ANTHROPIC_MODEL != "gpt-4"
 
@@ -80,7 +84,7 @@ def test_patch_rejects_uncoercible_value() -> None:
     original = settings.MAX_AUDIO_BYTES
     try:
         resp = client.patch(
-            "/admin/config", json={"updates": {"MAX_AUDIO_BYTES": "not-an-int"}}
+            "/v1/admin/config", json={"updates": {"MAX_AUDIO_BYTES": "not-an-int"}}
         )
         assert resp.status_code == 422
         assert original == settings.MAX_AUDIO_BYTES
@@ -91,7 +95,9 @@ def test_patch_rejects_uncoercible_value() -> None:
 def test_patch_log_level_applies_side_effect() -> None:
     original = settings.LOG_LEVEL
     try:
-        resp = client.patch("/admin/config", json={"updates": {"LOG_LEVEL": "DEBUG"}})
+        resp = client.patch(
+            "/v1/admin/config", json={"updates": {"LOG_LEVEL": "DEBUG"}}
+        )
         assert resp.status_code == 200
         assert settings.LOG_LEVEL == "DEBUG"
         assert logging.getLogger("app").level == logging.DEBUG

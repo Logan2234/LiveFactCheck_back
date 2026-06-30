@@ -9,5 +9,7 @@ explicitly across the boundary.
 from app.models.claim import Claim
 from app.models.session import Session
 from app.models.transcript_segment import TranscriptSegment
+from app.models.user import User
+from app.models.webhook import Webhook
 
-__all__ = ["Claim", "Session", "TranscriptSegment"]
+__all__ = ["Claim", "Session", "TranscriptSegment", "User", "Webhook"]

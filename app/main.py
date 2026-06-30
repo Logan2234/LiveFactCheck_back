@@ -9,7 +9,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import admin, auth, fact_check, health, sessions, ws
+from app.api.routers import (
+    admin,
+    auth,
+    fact_check,
+    health,
+    sessions,
+    users,
+    webhooks,
+    ws,
+)
 from app.config import settings
 from app.core.observability import setup_logging
 from app.db.session import init_db
@@ -34,9 +43,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# /health stays unversioned (infra probe convention). Every other router is mounted
+# under /v1 so the API is versioned in one place — the prefix also moves /ws to /v1/ws.
 app.include_router(health.router)
-app.include_router(auth.router)
-app.include_router(fact_check.router)
-app.include_router(admin.router)
-app.include_router(sessions.router)
-app.include_router(ws.router)
+
+API_V1 = "/v1"
+app.include_router(auth.router, prefix=API_V1)
+app.include_router(fact_check.router, prefix=API_V1)
+app.include_router(admin.router, prefix=API_V1)
+app.include_router(sessions.router, prefix=API_V1)
+app.include_router(users.router, prefix=API_V1)
+app.include_router(webhooks.router, prefix=API_V1)
+app.include_router(ws.router, prefix=API_V1)
