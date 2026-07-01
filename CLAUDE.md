@@ -7,17 +7,16 @@ read it for anything descriptive; this file is only conventions and traps.
 FastAPI service: audio over `/ws` → local transcription (faster-whisper) → claim
 extraction/verification via the Anthropic API. Plus an admin API under `/admin/*`.
 
-## Tracking files (TODO.md, README.md)
+## Tracking files (README.md)
 
-- Read them at the start of a task for **direction and intent** — where the project
+- Read `README.md` at the start of a task for **direction and intent** — where the project
   is headed and the why behind choices.
-- Treat their **progress/done state as a hint, not the truth**: a task marked done
+- Treat its **progress/done state as a hint, not the truth**: something described as done
   may not be, or may have drifted. Verify against the code before relying on it. When
   they disagree, **the code wins** — flag the gap, don't edit code to match the docs.
-- Update these files **only when I ask** (or at the end of a task I've validated).
-  No speculative or routine updates. Exception: when I point to a specific TODO item
-  and ask you to handle it, update that line automatically (check it off / amend it)
-  as part of completing the task — no need to ask first.
+- Update `README.md` **only when I ask** (or at the end of a task I've validated).
+  No speculative or routine updates.
+- The backlog lives in **GitHub Issues**, not in a tracked file — there is no `TODO.md`.
 
 ## Commands
 
